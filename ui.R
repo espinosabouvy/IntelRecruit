@@ -13,7 +13,8 @@ library(plotly)
 library(shinyalert) #install.packages('shinyalert')
 library(tibble)
 library(stringi)  #install.packager('stringi')
-#library(rhandsontable) #install.packager('rhandsontable)
+# library(shinyjs)  #install.packages("shinyjs")
+library(rhandsontable) #install.packager('rhandsontable)
 # library(ggmap) #distancia entre cps
 
 # #poner text input lado a lado
@@ -29,6 +30,7 @@ dashboardPage(skin = "blue",
               dashboardHeader(title ="IntelRecruit v.2.0",titleWidth = 200),
               dashboardSidebar(width = 200,
                    sidebarMenuOutput("menu.login"),
+                   sidebarMenuOutput("menu.reclut"),
                    sidebarMenuOutput("menu.logged")
                         ),
               dashboardBody(
@@ -44,18 +46,13 @@ dashboardPage(skin = "blue",
                                     splitLayout(cellWidths = c("50%","50%"),
                                                 pickerInput("Cproceso","Proceso","",
                                                             options = list('dropupAuto' = T, 'mobile'=T)),
-                                                dateInput("CFecha","Fecha",value = Sys.Date(),max = Sys.Date())),
+                                                dateInput("CFecha","Fecha",value = Sys.Date(),max = Sys.Date(),
+                                                          language = "es")),
                                     uiOutput("razon.rechazo"),
                                     actionBttn("cmd.guardar.proceso",  NULL, 
                                                style = "simple", color = "success", icon = icon("floppy-o"))
                                 ),
-                                box(title = 'DETALLE DE CANDIDATO', width = 8, collapsible = T,
-                                    htmlOutput("TDetalleCandidatos")),
-                                DT::dataTableOutput("tabla.seguimiento"),
-                                busyIndicator("Cargando registros...", wait = 1)
-                        ),
-                        tabItem("abc-candidatos",
-                                box(title = 'ABC CANDIDATOS', width = 12, collapsible = T,
+                                box(title = 'ABC CANDIDATOS', width = 8, collapsible = T,
                                     splitLayout(cellWidths = c("0%","40%","60%"),
                                                 textInput("Tid", "ID"),
                                                 textInput("Tnombre", "Nombre"),
@@ -81,9 +78,9 @@ dashboardPage(skin = "blue",
                                     actionBttn("cmd.nuevo.candidato", NULL, style = "simple",color = "primary", icon = icon("plus")),
                                     actionBttn("cmd.guardar.candidato",  NULL, style = "simple", color = "success", icon = icon("floppy-o")),
                                     actionBttn("cmd.borrar.candidato",  NULL, style = "simple", color = 'danger', icon = icon("minus"))),
-                                DT::dataTableOutput("tabla.candidatos"),
-                                busyIndicator("Cargando informacion...", wait = 2)
-                                ),
+                                DT::dataTableOutput("tabla.seguimiento"),
+                                busyIndicator("Cargando registros...", wait = 1)
+                        ),
                         tabItem("abc-bolsa",
                                 box("VACANTES ABIERTAS",width = 9,
                                     DT::dataTableOutput("tabla.bolsa.vacantes")),
@@ -100,7 +97,7 @@ dashboardPage(skin = "blue",
                                 busyIndicator("Cargando informacion...", wait = 1)
                                 ),
                         tabItem("abc-gastos", 
-                                box("ABC gastos", width = 12, collapsible = T,
+                                box(title = "ABC gastos", width = 12, collapsible = T,
                                     splitLayout(cellWidths = c("0%", "40%","40%"),
                                          textInput("Gid", "ID"),       
                                          pickerInput("gastos.conceptos","Conceptos","", 
@@ -133,13 +130,52 @@ dashboardPage(skin = "blue",
                                 DT::dataTableOutput("tabla.clientes"),
                                 busyIndicator("Cargando clientes...", wait = 1)
                                 ),
+                        tabItem("solo-vacantes",
+                                p("Las vacantes solo pueden ser modificadas por un supervisor"),
+                                DT::dataTableOutput("tabla.vacantes.solo"),
+                                busyIndicator("Cargando vacantes...", wait = 1)
+                        ),
                         tabItem("abc-vacantes",
-                                h5("Las vacantes solo pueden ser creadas y modificadas por un supervisor"),
+                                box(id = "vacantes.box", title = "ABC vacantes", width = 12, collapsible = T,
+                                splitLayout(cellWidths = c("0%","30%","30%","15%","15%"),
+                                            textInput("Vid", "ID"),
+                                            pickerInput("Vcliente","Cliente","", 
+                                                        options = list('dropupAuto' = T, 'mobile'=T)),
+                                            pickerInput("Vvacante","Vacante","", 
+                                                        options = list('dropupAuto' = T, 'mobile'=T)),
+                                            pickerInput("Vreclut","Reclutador","", 
+                                                        options = list('dropupAuto' = T, 'mobile'=T)),
+                                            dateInput("Vfecha","Fecha",value = Sys.Date(),
+                                                      language = "es")
+                                            ),
+                                actionBttn("cmd.nuevo.vacante", NULL, style = "simple",color = "primary", icon = icon("plus")),
+                                actionBttn("cmd.guardar.vacante",  NULL, style = "simple", color = "success", icon = icon("floppy-o")),
+                                actionBttn("cmd.borrar.vacante",  NULL, style = "simple", color = 'danger', icon = icon("minus"))
+                                ),
+                                radioGroupButtons(inputId = "vacantes.cerradas", label = "Filtrar", choices = c("Todas", "Solo abiertas"), 
+                                                  status = "primary", selected = "Solo abiertas",
+                                                  checkIcon = list(yes = icon("ok", lib = "glyphicon"), no = icon("remove",lib = "glyphicon"))),
                                 DT::dataTableOutput("tabla.vacantes"),
                                 busyIndicator("Cargando vacantes...", wait = 1)
                         ),
+                        tabItem("abc-metas",
+                                box(id = "metas.box", title = "ABC metas", width = 12, collapsible = T,
+                                    splitLayout(cellWidths = c("0%","40%","15%","15%"),
+                                                textInput("Mid", "ID"),
+                                                pickerInput("Mdescripcion","KPI","",
+                                                            options = list('dropupAuto' = T, 'mobile'=T)),
+                                                textInput("Mmeta","Meta",""),
+                                                dateInput("Mfecha","Fecha de inicio", value = Sys.Date(),
+                                                          language = "es")
+                                    ),
+                                    actionBttn("cmd.nuevo.meta", NULL, style = "simple",color = "primary", icon = icon("plus")),
+                                    actionBttn("cmd.guardar.meta",  NULL, style = "simple", color = "success", icon = icon("floppy-o")),
+                                    actionBttn("cmd.borrar.meta",  NULL, style = "simple", color = 'danger', icon = icon("minus"))
+                                ),
+                                dataTableOutput("tabla.metas"),
+                                busyIndicator("Cargando vacantes...", wait = 1)
+                        ),
                         tabItem("score",
-                                # uiOutput("ui.score.reclut"),
                                 box(title = "Vacantes",width = 12, background = "black",
                                 valueBoxOutput("ui.vacantes.cumplidas",width = 2),
                                 valueBoxOutput("ui.solicitudes.vacante",width = 2),

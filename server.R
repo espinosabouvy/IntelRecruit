@@ -25,14 +25,13 @@ shinyServer(function(input, output, session) {
      
      #cargar cp
      cp <- read.csv("www/cp.csv")
-
+     
      #main variables
      b.logged <- FALSE   #global status login
-     id_user <- character(0)  #id_user para filtros por usuario logeado
+     id_user <- reactiveVal(character(0))  #id_user para filtros por usuario logeado
      level <- character(0)   #nivel del usuario logeado
      nombre <- character(0)  #nombre del usuario
-     
-     #con <- NULL         #global conexion mysql
+
      fechas.selected <- character(0)  #una frecuencia por default al cargar kpis
      
      #tablas guardadas de consultas
@@ -40,12 +39,18 @@ shinyServer(function(input, output, session) {
      seguimiento <-  NULL
      embudo <-  NULL
      tabla.de.seguimiento <- NULL
+          new.seguimiento <- reactiveVal(0)
      vacantes.abiertas <- NULL
      vacantes.disponibles <- NULL
      db.tabla.candidatos <- NULL
+          new.candidatos <- reactiveVal(0)
      db.tabla.gastos <- NULL
+     db.bolsa.candidatos <- NULL
+     db.bolsa.vacantes <- NULL
+          new.vacantes <- reactiveVal(0)
+     db.tabla.catalogo <- NULL
      vacantes <- NULL
-     tabla.bolsa <- NULL
+     datos.asignacion <- NULL
      c_sexo <- NULL
      c_escolaridad <- NULL
      c_medio <- NULL
@@ -54,7 +59,8 @@ shinyServer(function(input, output, session) {
      c_concepto.gastos <- NULL
      c_catalogos <- NULL
      c_reclutadores <- NULL
-     
+
+
      #funciones de consultas -----------------------------
      #conexion la bd
      conectar <- function(){
@@ -130,7 +136,7 @@ shinyServer(function(input, output, session) {
           return(consulta)
      }
   
-     q.gastos <- function(id_usuario=id_user, date.inicio = 20000101){
+     q.gastos <- function(id_usuario=id_user(), date.inicio = 20000101){
           con <- conectar()
           cat(paste("Fecha de gastos", date.inicio, "\n"))
           
@@ -191,15 +197,22 @@ shinyServer(function(input, output, session) {
           
      }
      
-     q.vacantes <- function(id_status=c(1,2), id_usuario= id_user, all=F, date.inicio= 20000101){
+     q.vacantes <- function(id_status=c(1,2), id_usuario= id_user(), all=F, date.inicio= 20000101){
           con <- conectar()
-          query <- paste0("SELECT vacantes.id, clientes.`nombre` AS 'cliente', vacantes_nombre.`nombre` AS 'vacante', 
+          query <- paste0("SELECT vacantes.id, clientes.`nombre` AS 'cliente', vacantes_nombre.`nombre` AS 'vacante',
+                          COUNT(DISTINCT(vf.id_candidato)) AS 'candidatos',
                           vacantes.fecha, vacantes_status.`nombre` AS 'status', users.`user` AS 'asesor',
                           clientes.`codigo_postal`
                           FROM vacantes
                           LEFT JOIN clientes ON clientes.id = vacantes.`id_cliente`
                           LEFT JOIN vacantes_nombre ON vacantes_nombre.id = vacantes.`id_nombre_vacante`
                           LEFT JOIN vacantes_status ON vacantes_status.id = vacantes.`id_status`
+                          LEFT JOIN (SELECT * 
+	                              FROM vacantes_following
+                                   WHERE vacantes_following.`id_candidato` NOT IN (SELECT id_candidato 
+                                        FROM vacantes_following 
+                                        WHERE id_proceso=5)) 
+                          AS vf ON vf.id_vacante = vacantes.`id`
                           LEFT JOIN users ON users.id = vacantes.`id_usuario` 
                           WHERE vacantes.`baja`=0 ")
           
@@ -209,6 +222,8 @@ shinyServer(function(input, output, session) {
                               "AND vacantes.fecha >= ", gsub("-","",ymd(date.inicio)))
           }
           
+          query <- paste0(query, " GROUP BY vacantes.`id`")
+          
           consulta <- dbGetQuery(con, query)
           dbDisconnect(con)
           
@@ -217,7 +232,7 @@ shinyServer(function(input, output, session) {
      }
      
      #seguimiento a candidatos en proceso, vacantes abiertas y/o cerradas
-     q.seguimiento <- function(id_status=1, id_usuario= id_user, all=F){
+     q.seguimiento <- function(id_status=1, id_usuario= id_user(), all=F){
           con <- conectar()
           query <- paste0("SELECT cand.id as 'id_candidato', cand.nombre  AS 'candidato', cand.escolaridad, cand.sexo, cand.medio, vacantes_detalle.*, vp.orden AS 'orden_proceso',
                           vp.id AS 'id_proceso', vp.nombre AS 'proceso', 
@@ -287,7 +302,7 @@ shinyServer(function(input, output, session) {
           return(consulta)
      }
      
-     q.costo.por.medio <- function(id_usuario= id_user, date.inicio = 20000101){
+     q.costo.por.medio <- function(id_usuario= id_user(), date.inicio = 20000101){
           con <- conectar()
           query <- paste0("
                          SELECT me.nombre medio, cerradas, IF(gastado IS NULL, 0, gastado) gastado, 
@@ -334,7 +349,7 @@ shinyServer(function(input, output, session) {
           return(consulta)
      }
      
-     q.embudo <- function(id.status.vacantes = c(1,2), id_usuario= id_user, all=F, date.inicio=20000101){
+     q.embudo <- function(id.status.vacantes = c(1,2), id_usuario= id_user(), all=F, date.inicio=20000101){
           con <- conectar()
           query <- paste0("SELECT vacantes.id, clientes.`nombre`, vacantes_nombre.`nombre` AS 'vacante', 
                vacantes.fecha as 'fecha_vacante', vacantes_status.`nombre` AS 'status', 
@@ -364,6 +379,41 @@ shinyServer(function(input, output, session) {
                               ") AND vacantes.id_usuario = ", id_usuario, 
                               "AND vacantes.fecha >= ", gsub("-","",ymd(date.inicio)))
            }
+          consulta <- dbGetQuery(con, query)
+          dbDisconnect(con)
+          return(consulta)
+     }
+     
+     q.vac.iguales <- function(id_vacante = 0){  #vacantes iguales a otra
+          con <- conectar()
+          
+          query <- paste0("SELECT vac.id id_vacante
+                         FROM vacantes vac
+                    RIGHT JOIN(SELECT id_cliente, id_nombre_vacante
+                    FROM vacantes vac
+                    WHERE vac.id = ", id_vacante, ") 
+                    AS dvac ON dvac.id_cliente = vac.id_cliente AND dvac.id_nombre_vacante = vac.id_nombre_vacante
+                    WHERE vac.id_status = 1 AND vac.id <> ", id_vacante , 
+                    " ORDER BY fecha
+                    LIMIT 1")
+          
+          consulta <- dbGetQuery(con, query)
+          dbDisconnect(con)
+          
+          return(consulta)
+     }
+     
+     q.following <- function(id_vacante = 0, id_candidato = 0, rechazos = F){
+          con <- conectar()
+          
+          query <- paste0("SELECT *
+                          FROM vacantes_following vf
+                          WHERE vf.id_vacante =  ", id_vacante,  
+                          " AND id_candidato <> ", id_candidato)
+          if(rechazos){
+               query <- paste0(query, " AND id_proceso <> 5")
+          }
+          
           consulta <- dbGetQuery(con, query)
           dbDisconnect(con)
           return(consulta)
@@ -416,7 +466,7 @@ shinyServer(function(input, output, session) {
           if (nrow(logins)>0){
                level <<- logins$level
                nombre <<- logins$nombre
-               id_user <<- logins$id
+               id_user(logins$id)
                cargar_menus()
           } else {
                # sendSweetAlert(session, "Incorrecto","Usuario o contraseña incorrectos",
@@ -438,7 +488,7 @@ shinyServer(function(input, output, session) {
                     paste("Del ", ymd(fechas), "al", fecha.hoy)
                }) 
                
-               kpi.tiempo <<- q.kpi.tiempo.proceso(id_usuario = id_user, 
+               kpi.tiempo <<- q.kpi.tiempo.proceso(id_usuario = id_user(), 
                                                    date.inicio = fechas)
                return(kpi.tiempo)
           })
@@ -529,7 +579,7 @@ shinyServer(function(input, output, session) {
                
                
                dias.prom.vacante <- kpi.tiempo%>%
-                    filter(id_status ==2)%>%
+                    filter(id_status ==2 & id_proceso==4)%>%  #cerradas y proceso de ingreso
                     mutate("SEMANA" = paste(year(fecha_vacante),"-",week(fecha_vacante)),
                            "INGRESO" = as_date(ifelse(proceso == "Ingreso", fecha, fecha.hoy)),
                            "DIAS.ABIERTA" = INGRESO-fecha_vacante)%>%
@@ -618,20 +668,23 @@ shinyServer(function(input, output, session) {
           
           #scoreboard ------------------------------------------------------------------------------
           #grafico tiempos de proceso
-
+          
+          observeEvent(input$reclut,{
+               if(is.null(input$reclut)) return(NULL)
+               id_user(c_reclutadores[c_reclutadores$nombre==input$reclut,]$id)
+               cat(paste("Cambiando a reclutador id:", id_user(),"\n"))
+          })
+          
           output$p.tiempos.proceso <- renderPlot({
                if(is.null(input$frecuencia)) return(NULL)
                fechas <- tiempos(input$frecuencia)
-               
-               # if(is.null(input$score.reclut))return(NULL)
-               # id_user<-c_reclutadores[c_reclutadores$nombre==input$score.reclut,]$id
 
                #fechas superior
                output$fechas.filtros <- renderText({
                     paste("Del ", ymd(fechas), "al",fecha.hoy)
                }) 
                
-               kpi.tiempo <<- q.kpi.tiempo.proceso(id_usuario = id_user, 
+               kpi.tiempo <<- q.kpi.tiempo.proceso(id_usuario = id_user(), 
                                                    date.inicio = fechas)  
                
                tiempo <- kpi.tiempo%>%
@@ -697,7 +750,7 @@ shinyServer(function(input, output, session) {
                if(is.null(input$frecuencia)) return(NULL)
                fechas <- tiempos(input$frecuencia)
                
-               consulta <- q.vacantes(id_status=c(1), id_usuario = id_user, all = F)
+               consulta <- q.vacantes(id_status=c(1), id_usuario = id_user(), all = F)
                     
                valueBox(
                     nrow(consulta) , "Abiertas",  icon = icon("list"),
@@ -710,7 +763,7 @@ shinyServer(function(input, output, session) {
                fechas <- tiempos(input$frecuencia)
                
                consulta <- q.vacantes(id_status=c(1,2), 
-                                      id_usuario = id_user, 
+                                      id_usuario = id_user(), 
                                       all = F,
                                       date.inicio = fechas)
                
@@ -735,7 +788,7 @@ shinyServer(function(input, output, session) {
                if(is.null(input$frecuencia)) return(NULL)
                fechas <- tiempos(input$frecuencia)
 
-               embudo <<- q.embudo(id_usuario = id_user, date.inicio = fechas)   
+               embudo <<- q.embudo(id_usuario = id_user(), date.inicio = fechas)   
                
                #solicitudes por vacante
                output$ui.solicitudes.vacante <- renderValueBox({
@@ -750,7 +803,7 @@ shinyServer(function(input, output, session) {
                
                output$ui.costo.vacante <- renderValueBox({
                     if(is.null(input$frecuencia)) return(NULL)
-                    gastado <- q.total.gastado(id_usuario = id_user, date.inicio = fechas) 
+                    gastado <- q.total.gastado(id_usuario = id_user(), date.inicio = fechas) 
                     cerradas <- nrow(embudo%>%
                          filter(proceso == "Ingreso"))
                     
@@ -787,7 +840,7 @@ shinyServer(function(input, output, session) {
                     if(is.null(input$frecuencia)) return(NULL)
                     fechas <- tiempos(input$frecuencia)
                     
-                    costo.x.medio <- q.costo.por.medio(id_usuario = id_user, date.inicio = fechas) 
+                    costo.x.medio <- q.costo.por.medio(id_usuario = id_user(), date.inicio = fechas) 
                     
                     ggplot(costo.x.medio, aes(medio, costo,label = paste0(medio,"- $",costo)), group = 1) + 
                          geom_bar(stat = 'identity',fill = "turquoise3") + 
@@ -801,7 +854,7 @@ shinyServer(function(input, output, session) {
                })
                
                output$p.en.proceso <- renderPlot({
-                    seguimiento <- q.seguimiento(id_status = 1, id_usuario = id_user)
+                    seguimiento <- q.seguimiento(id_status = 1, id_usuario = id_user())
                     
                     p <- seguimiento%>%
                          group_by(orden_proceso, proceso)%>%
@@ -852,26 +905,27 @@ shinyServer(function(input, output, session) {
                     seguimiento <<- q.seguimiento(id_status = c(1,2), all = T)%>%
                          mutate_if(is.character, as.factor)
                } else {
-                    seguimiento <<- q.seguimiento(id_status = c(1), id_usuario = id_user, all = F)%>%
+                    seguimiento <<- q.seguimiento(id_status = c(1), id_usuario = id_user(), all = F)%>%
                          mutate_if(is.character, as.factor)
                }
                
                #formatear
-               tabla.de.seguimiento <- seguimiento%>%
+               datos <- seguimiento%>%
                     mutate("proceso" = paste0(orden_proceso,".",proceso))%>%
                     select(id_candidato, candidato, cliente, id_vacante, vacante, proceso, fecha)%>%
                     spread(proceso, fecha)%>%
-                    arrange(cliente, vacante, candidato)
-               row.names(tabla.de.seguimiento)<- tabla.de.seguimiento$id_candidato
-               return(tabla.de.seguimiento)
+                    arrange(cliente, vacante, candidato)%>%
+                    tibble::column_to_rownames("id_candidato")
+               return(datos)
                
           }
           
           output$tabla.seguimiento <- DT::renderDataTable({
+               new.seguimiento()
                tabla.de.seguimiento <<- cargar.seguimiento()
                
                tabla.print <- tabla.de.seguimiento%>%
-                    select(everything(), -id_candidato, -id_vacante)
+                    select(everything(), -id_vacante)
                
                #formatear columnas
                tabla.print[,1:4] <- lapply(tabla.print[,1:4], factor)
@@ -939,9 +993,11 @@ shinyServer(function(input, output, session) {
                                "No se ha seleccionado un proceso o fecha que registrar",
                                type = "error",animation = TRUE)
                } else {
+                    
                     if(id_proceso==4){ #si se cierra la vacante
-                         msg <- "¿Estas seguro de registrar el proceso de ingreso? \n
-                         Esto cerrara la vacante y los otros candidatos asignados a este proceso se moveran a la bolsa de candidatos"     
+                         msg <- "Esto cerrara la vacante y los otros candidatos asignados a esta vacante se asignaran a otra vacante \n
+                         del mismo cliente y posicion si existiera o a la bolsa de candidatos \n
+                         ¿Estas seguro de registrar el proceso de ingreso?"     
                     } else {  #confirma normal
                          msg <- "¿Estas seguro de registrar la actualizacion al proceso de seleccion?"
                     }
@@ -972,6 +1028,7 @@ shinyServer(function(input, output, session) {
                id_vacante <- tabla.de.seguimiento[ren,]$id_vacante
                id_proceso <- c_procesos[c_procesos$nombre == proceso,]$id
                comentarios <- "sin comentarios"
+               
                if (id_proceso==5) {
                     id_razon_rechazo <- c_rechazo[c_rechazo$nombre== input$rechazo,]$id }
                else {id_razon_rechazo <- 0 }
@@ -988,38 +1045,29 @@ shinyServer(function(input, output, session) {
                                  id_razon_rechazo, ")")
                con <- conectar()
                dbExecute(con,qinsert)
-
                
-               #si ingreso, dar de baja la vacante tambien
+               #si ingreso, dar de baja la vacante, reasignar otros solicitantes o enviar a bolsa de candidatos
                if (id_proceso==4) {
+                    #buscar si hay más vacantes de este cliente y puesto
+                    vac.iguales <- q.vac.iguales(id_vacante = id_vacante)
+                    
+                    if(nrow(vac.iguales)>0) { #crear registro nuevo para otros candidatos de esa misma vacante
+                         registros <- q.following(id_vacante = id_vacante, id_candidato = id_candidato, rechazos = F)
+                         
+                         if(nrow(registros)>0) {  #hay registros por cambiar de vacante
+                              fun.cambiar.vacante(datos = registros, fecha.nueva = NULL, vacante.nva = vac.iguales$id_vacante)
+                         }
+                    }
+                    
                     qupdate <- paste0("UPDATE vacantes SET id_status = 2 WHERE id= ", id_vacante)
                     dbExecute(con,qupdate)
+                    new.vacantes(new.vacantes()+1)  #forzar actualizacion vacantes
                }
-               dbDisconnect(con)
                
-               #actualiza la tabla tambien
-               output$tabla.seguimiento <- DT::renderDataTable({
-                    tabla.de.seguimiento <<- cargar.seguimiento()
-                    
-                    tabla.print <- tabla.de.seguimiento%>%
-                         select(everything(), -id_candidato, -id_vacante)
-                    
-                    #formatear columnas
-                    tabla.print[,1:4] <- lapply(tabla.print[,1:4], factor)
-                    
-                    datatable(data = tabla.print,
-                              rownames = T,
-                              selection ='single', 
-                              filter = "top",
-                              autoHideNavigation = T,
-                              extensions = 'Scroller',
-                              options = list(dom = 'ft',
-                                             scrollX = TRUE,
-                                             scrollY = 400,
-                                             scroller = TRUE,
-                                             fixedHeader = TRUE))
-               })
+               dbDisconnect(con)
+               new.seguimiento(new.seguimiento()+1)  #actualiza tabla seguimiento
           }      
+          #termina Registro de avances del proceso--------------------------------------------------
           
           #ASIGNACION DE CANDIDATOS A VACANTES ---------------------------------------------
           cargar.bolsa.candidatos <- function(){
@@ -1040,7 +1088,7 @@ shinyServer(function(input, output, session) {
           }
           
           output$tabla.bolsa.candidatos <- DT::renderDataTable({
-               forzar <- input$cnf.guardar.proceso  #forza actualizacion al cerrar vacante
+               new.candidatos()
                db.bolsa.candidatos<<-cargar.bolsa.candidatos()
                
                datatable(data = db.bolsa.candidatos,
@@ -1056,18 +1104,19 @@ shinyServer(function(input, output, session) {
                                         fixedHeader = TRUE))
           })
           
-          cargar.bolsa.vacantes <- function(){
+          cargar.bolsa.vacantes <- function(id_status = 1,id_usuario = id_user(), all = F){
                
-               db.bolsa.vacantes <- q.vacantes(id_status = 1,id_usuario = id_user, all = F)%>%
+               db.bolsa.vacantes <- q.vacantes(id_status = id_status,
+                                               id_usuario = id_usuario, all = all)%>%
                     mutate_if(is.character, as.factor)%>%
                     arrange(cliente)%>%
                     tibble::column_to_rownames("id")%>%
-                    select(cliente, vacante, codigo_postal, fecha)
+                    select(cliente, vacante, candidatos, codigo_postal, fecha)
                return(db.bolsa.vacantes)
           }
           
           output$tabla.bolsa.vacantes <- DT::renderDataTable({
-               forzar <- input$cnf.guardar.proceso  #forza actualizacion al cerrar vacante
+               new.vacantes()
                db.bolsa.vacantes <<- cargar.bolsa.vacantes()
 
                datatable(data = db.bolsa.vacantes,
@@ -1139,54 +1188,49 @@ shinyServer(function(input, output, session) {
                     select(id)
                datos.asignacion <- datos.asignacion%>%
                     filter(id_proceso == cuales.dejar$id)
-               fun.guardar.asignacion(datos = datos.asignacion)
-          })
-          
-          fun.guardar.asignacion <- function(datos = NULL){
+               
                #vacante nueva
                ren.vac <- input$tabla.bolsa.vacantes_rows_selected
                id.vac <- row.names(db.bolsa.vacantes)[ren.vac]
                
-               #solo actualiza procreso con fecha de hoy
-               num.cand <- length(datos$id_proceso)
-               datos<- datos%>%mutate("nva.vacante" = id.vac, "fecha.nva" = gsub("-","",ymd(fecha.hoy)))
+               fun.cambiar.vacante(datos = datos.asignacion, fecha.nueva = fecha.hoy, 
+                                   vacante.nva = id.vac)
+          })
+          
+          
+          fun.cambiar.vacante <- function(datos = NULL, fecha.nueva = fecha.hoy,
+                                          vacante.nva = NULL){
+
+               # num.cand <- length(datos$id_proceso)
+               datos<- datos%>%
+                    mutate("nva.vacante" = vacante.nva,
+                           "fecha.nva" = ifelse(is.null(fecha.nueva),as.integer(fecha), gsub("-","",ymd(fecha.nueva))))
+                           
                valores <- paste(do.call(paste, 
                                         c(datos%>%
-                                               select(id_candidato, nva.vacante, id_proceso, fecha.nva), 
+                                               select(id_candidato, nva.vacante, id_proceso, fecha.nva, comentarios, 
+                                                      id_razon_rechazo)%>%
+                                               mutate(comentarios = paste0("'", ifelse(is.na(comentarios),"",comentarios) , "'"),
+                                                      id_razon_rechazo = ifelse(is.na(id_razon_rechazo),0,id_razon_rechazo)), 
                     sep = ",")),collapse = "),(")
-               cat(paste("Registrando asignacion", valores ,"\n"))
                
+               cat(paste("Copiando registros de vacante", unique(datos$id_vacante), "a nva vacante", unique(datos$nva.vacante) ,"\n"))
                qinsert <- paste0("INSERT INTO vacantes_following
-                                 (id_candidato, id_vacante, id_proceso, fecha) ",
+                                 (id_candidato, id_vacante, id_proceso, fecha, comentarios, id_razon_rechazo) ",
                                  "VALUES (", valores, ")")
                con <- conectar()
                dbExecute(con,qinsert)
                
                #marcar resgistro anterior como cambio de vacante
+               cat(paste("Marcando registros de vacante", unique(datos$id), "como cambio vacante \n"))
                qupdate <- paste0("UPDATE vacantes_following
                                  SET cambio_vacante = 1
                                  WHERE id IN (", paste0(datos$id, collapse = ",") ,")")
                dbExecute(con, qupdate)
-               
                dbDisconnect(con)
                
-               #actualiza tabla de candidatos
-               output$tabla.bolsa.candidatos <- DT::renderDataTable({
-                    forzar <- input$cnf.guardar.proceso  #forza actualizacion al cerrar vacante
-                    db.bolsa.candidatos<<-cargar.bolsa.candidatos()
-                    
-                    datatable(data = db.bolsa.candidatos,
-                              rownames = T,
-                              selection ='single', 
-                              filter = "top",
-                              autoHideNavigation = T,
-                              extensions = 'Scroller',
-                              options = list(dom = 't',
-                                             scrollX = TRUE,
-                                             scrollY = 300,
-                                             scroller = TRUE,
-                                             fixedHeader = TRUE))
-               })
+               new.candidatos(new.candidatos() +1)  #forzar actualizacion candidatos
+               new.seguimiento(new.seguimiento()+1)  #forzar actualizacion a seguimiento de vacantes
           }
           
           selectinputModal <- function(failed = FALSE, nombre = NULL, 
@@ -1285,7 +1329,7 @@ shinyServer(function(input, output, session) {
                #muestra combos de asignacion a vacante
                
                output$ui.cvacantes <- renderUI({
-                    vacantes <- q.vacantes(id_status = 1,id_usuario = id_user, all = F)
+                    vacantes <- q.vacantes(id_status = 1,id_usuario = id_user(), all = F)
                     pickerInput("Cvacantes","Vacantes disponibles",
                                 choices = unique(vacantes$vacante),
                                 options = list('dropupAuto' = T, 'mobile'=T))
@@ -1296,7 +1340,7 @@ shinyServer(function(input, output, session) {
           observeEvent(c(input$Cvacantes,input$cmd.nuevo.candidato),{
                if(is.null(input$Cvacantes)) return(NULL)
                
-               vacantes <- q.vacantes(id_status = 1,id_usuario = id_user, all = F)%>%
+               vacantes <- q.vacantes(id_status = 1,id_usuario = id_user(), all = F)%>%
                     filter(vacante == input$Cvacantes)
                
                output$ui.ccliente <- renderUI({
@@ -1484,7 +1528,7 @@ shinyServer(function(input, output, session) {
                                    WHERE cl.nombre = '", input$Cclientes,"' AND
                                    vn.nombre = '", input$Cvacantes , "' AND
                                    vac.id_status = 1 AND
-                                   vac.id_usuario = ", id_user)
+                                   vac.id_usuario = ", id_user())
                     id_vacante <- dbGetQuery(con, query)
                     
                     qinsert <- paste0("INSERT INTO vacantes_following
@@ -1537,7 +1581,7 @@ shinyServer(function(input, output, session) {
                fechas <- tiempos(input$fechas.filtros.gastos)
                
                
-               gastos <- q.gastos(id_usuario = id_user, date.inicio = fechas)
+               gastos <- q.gastos(id_usuario = id_user(), date.inicio = fechas)
                gastos$fecha <- ymd(gastos$fecha)
                row.names(gastos)<- gastos$id
                
@@ -1732,7 +1776,7 @@ shinyServer(function(input, output, session) {
                     id_cliente = rep(0,num.medios),
                     id_concepto = rep(id_concepto,num.medios),
                     id_medio = id_medio,
-                    id_asesor = rep(as.integer(id_user),num.medios),
+                    id_asesor = rep(as.integer(id_user()),num.medios),
                     id_comun = ifelse(num.medios==1, 
                                       rep(0,num.medios),
                                       rep(format(Sys.time(), "%H%M%S"),num.medios)),
@@ -2016,18 +2060,12 @@ shinyServer(function(input, output, session) {
           
           output$tabla.vacantes <- DT::renderDataTable({
                if (level == "super") {
-                    vacantes <- q.vacantes(all = T)%>%
-                         mutate_if(is.character, as.factor)
+                    vacantes <- cargar.bolsa.vacantes(id_status = c(1,2), all = T)
                } else {
-                    vacantes <- q.vacantes(id_status = 1,id_usuario = id_user, all = F)%>%
-                         mutate_if(is.character, as.factor)
+                    vacantes <- cargar.bolsa.vacantes(id_status = 1, id_usuario = id_user())
                }
-               
-               row.names(vacantes)<- vacantes$id
-               datos <- vacantes%>%
-                    select(cliente, vacante, fecha, codigo_postal)
-               
-               datatable(data = datos,
+
+               datatable(data = vacantes,
                          rownames = T,
                          selection ='single', 
                          filter = "top",
@@ -2080,6 +2118,11 @@ shinyServer(function(input, output, session) {
           output$menu.logged <- renderMenu({
                sidebarMenu()
           })
+          
+          output$menu.reclut <- renderMenu({
+               sidebarMenu()
+          })
+          
      })
      
      #combos generales
@@ -2104,22 +2147,53 @@ shinyServer(function(input, output, session) {
      
      #fechas y frecuencias condicionales a menu de scorboards
      output$ui.fechas <- renderUI({
+          if (!is.null(input$Menu.reclut)) {
+               if (input$Menu.reclut %in% c('score',"kpis")){
+                    con <- conectar()
+                    query <- paste("SELECT * FROM frecuencias WHERE baja = 0")
+                    consulta <- dbGetQuery(con, query)
+                    fechas.selected <<- consulta[consulta$default == 1,]$nombre
+                    dbDisconnect(con)
+                    
+                    pickerInput("frecuencia",label = "Periodo", 
+                                choices = consulta$nombre,
+                                multiple = F,
+                                options = list(style = "btn-primary"))
+               } else { return(NULL) }
+          } else {
+               if (!is.null(input$Menu.super)) {
+                    if (input$Menu.super %in% c('score',"kpis")){
+                         con <- conectar()
+                         query <- paste("SELECT * FROM frecuencias WHERE baja = 0")
+                         consulta <- dbGetQuery(con, query)
+                         dbDisconnect(con)
+                         
+                         fechas.selected <<- head(consulta[consulta$default == 1,]$nombre,1)
+                        
+                         pickerInput("frecuencia",label = "Periodo", 
+                                     choices = consulta$nombre,
+                                     multiple = F,
+                                     options = list(style = "btn-primary"))
+                    } else { return(NULL) }  
+               } else {return(NULL)}
+          }
+     })
+     
+     #caja con las fechas
+     output$ui.fechas.filtros <- renderUI({
           if (is.null(input$Menu.reclut)) return(NULL)
           
-          con <- conectar()
-          query <- paste("SELECT * FROM frecuencias WHERE baja = 0")
-          consulta <- dbGetQuery(con, query)
-          fechas.selected <<- consulta[consulta$default == 1,]$nombre
-          dbDisconnect(con)
-          
-
           if (input$Menu.reclut %in% c('score',"kpis")){
-               pickerInput("frecuencia",label = "Periodo", 
-                           choices = consulta$nombre,
-                           multiple = F,
-                           options = list(style = "btn-primary"))
-          } else { return(NULL) }
+               htmlOutput("fechas.filtros")
+          }
+     })
+     #caja con las fechas
+     output$ui.fechas.filtros.super <- renderUI({
+          if (is.null(input$Menu.super)) return(NULL)
           
+          if (input$Menu.super %in% c('score',"kpis")){
+               htmlOutput("fechas.filtros")
+          }
      })
      
      output$ui.ver.rechazados <- renderUI({
@@ -2142,18 +2216,9 @@ shinyServer(function(input, output, session) {
                       choices = c_rechazo$nombre,multiple = F)
      })
      
-     #caja con las fechas
-     output$ui.fechas.filtros <- renderUI({
-          if (is.null(input$Menu.reclut)) return(NULL)
-          
-          if (input$Menu.reclut %in% c('score',"kpis")){
-               htmlOutput("fechas.filtros")
-          }
-     })
-     
      #carga combo de fechas en menu
      output$ui.rango <- renderUI({
-          if (is.null(input$Menu.reclut)) return(NULL)
+          #if (is.null(input$Menu.reclut)) return(NULL)
           
           if (input$Menu.reclut == "score"){
                pickerInput("rango.score",label = "Agrupamiento", 
@@ -2206,28 +2271,44 @@ shinyServer(function(input, output, session) {
           })
 
           if(level == "super"){
+               
+               output$menu.reclut <- renderMenu({
+                    sidebarMenu(
+                         uiOutput("ui.reclut")
+               )
+               })
+
                output$menu.logged <- renderMenu({
                     sidebarMenu(
-                         menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer")),
+                         menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer"),selected = T),
                          menuItem("KPIs", tabName = "kpis", icon = icon("line-chart")),
-                         menuItem("USUARIOS", tabName = "abc-users", icon = icon("users"),selected = F),
+                         uiOutput("ui.fechas"),
+                         # uiOutput("ui.rango"),  #por semana, mes
+                         uiOutput("ui.fechas.filtros.super"),
                          menuItem("CLIENTES", tabName = "abc-clientes", icon = icon("industry")),
                          menuItem("VACANTES", tabName = "abc-vacantes", icon = icon("list")),
                          menuItem("METAS", tabName = "abc-metas", icon = icon("trophy")),
+                         menuItem("USUARIOS", tabName = "abc-users", icon = icon("users")),
+                         menuItem("CATALOGOS", tabName = "catalogos", icon = icon("table")),
                          id = "Menu.super"
                     )
                })
                
                #combos de elegir reclutadores
-               output$ui.score.reclut <- renderUI({
-                    pickerInput("score.reclut", label = "", 
-                                inline = T, multiple = F, choices = c_reclutadores$nombre, 
+               output$ui.reclut <- renderUI({
+                    pickerInput("reclut", label = "Datos de", 
+                                inline = F, multiple = F, choices = c_reclutadores$nombre, 
                                 options = list('dropupAuto' = T, 'mobile'=T,
-                                               container=  'body'))
+                                               container=  'body',
+                                               style = "btn-primary"))
                })
           }
           
           if(level == "reclutador"){
+               output$menu.reclut <- renderMenu({
+                    return(NULL)
+               })
+
                output$menu.logged <- renderMenu({
                     sidebarMenu(
                          menuItem("SEGUIMIENTO VACANTES", tabName = "abc-registro", icon = icon("bullseye"), selected = T),
@@ -2240,21 +2321,18 @@ shinyServer(function(input, output, session) {
                          menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer")),
                          menuItem("KPIs", tabName = "kpis", icon = icon("line-chart")),
                          uiOutput("ui.fechas"),
-                         # uiOutput("ui.rango"),
+                         # uiOutput("ui.rango"),  #por semana, mes
                          uiOutput("ui.fechas.filtros"),
-                         menuItem("CATALOGOS", tabName = "catalogos", icon = icon("table")),
                          id = "Menu.reclut"
                     )
                })
                
-               output$ui.score.reclut <- renderUI({
-                    #combos de elegir reclutadores
-                    output$ui.score.reclut <- renderUI({
-                         pickerInput("score.reclut", label = "", 
-                                     inline = T, multiple = F, choices = nombre, 
-                                     options = list('dropupAuto' = T, 'mobile'=T,
-                                                    container=  'body'))
-                    })
+               #combos de elegir reclutadores
+               output$ui.reclut <- renderUI({
+                    pickerInput("reclut", label = "", 
+                                inline = T, multiple = F, choices = nombre, 
+                                options = list('dropupAuto' = T, 'mobile'=T,
+                                               container=  'body'))
                })
           }
      }
