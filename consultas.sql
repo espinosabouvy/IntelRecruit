@@ -15,15 +15,34 @@ AND candidatos.`id` IN (  /*condicional a mis candidatos*/
 ORDER BY candidatos.id
 
 /*vacantes 						q.vacantes()*/
-SELECT vacantes.id, clientes.`nombre` AS 'cliente', vacantes_nombre.`nombre` AS 'vacante', fecha, vacantes_status.`nombre` AS 'status', 
-users.`user` AS 'asesor', clientes.`codigo_postal`
+SELECT vacantes.id, clientes.`nombre` AS 'cliente', vacantes_nombre.`nombre` AS 'vacante', COUNT(DISTINCT(vf.id_candidato)) AS 'candidatos',
+vacantes.fecha, vacantes_status.`nombre` AS 'status', users.`user` AS 'asesor', clientes.`codigo_postal`
 FROM vacantes
 LEFT JOIN clientes ON clientes.id = vacantes.`id_cliente`
 LEFT JOIN vacantes_nombre ON vacantes_nombre.id = vacantes.`id_nombre_vacante`
 LEFT JOIN vacantes_status ON vacantes_status.id = vacantes.`id_status`
+LEFT JOIN (SELECT vacantes_following.* 
+	FROM vacantes_following
+	LEFT JOIN candidatos can ON can.id = vacantes_following.`id_candidato`
+	WHERE vacantes_following.`id_candidato` NOT IN (SELECT id_candidato 
+		FROM vacantes_following 
+		WHERE id_proceso=5)
+		AND can.`baja`=0) 
+AS vf ON vf.id_vacante = vacantes.`id`
 LEFT JOIN users ON users.id = vacantes.`id_usuario`
-WHERE vacantes.`baja`=0
-AND vacantes.`id_status` IN (1,2) AND vacantes.`fecha` BETWEEN 20180101 AND 20180201  /*condicional en R*/
+WHERE vacantes.`baja`= 0
+AND vacantes.`id_status` IN (1) 
+AND vacantes.id_usuario = 5
+AND vacantes.`fecha` >= 20000101
+GROUP BY vacantes.`id`
+
+SELECT vf.*
+FROM vacantes_following vf
+LEFT JOIN candidatos can ON can.id = vf.id_candidato
+WHERE vf.id_vacante = 342 
+AND vf.id_candidato NOT IN (SELECT id_candidato FROM vacantes_following WHERE id_proceso=5)
+AND can.baja= 0
+
 
 
 /*clientes + con vacantes   						q.clientes()*/
@@ -65,6 +84,23 @@ WHERE vf.id_candidato NOT IN
 	WHERE vacantes_procesos.cierra_vacante = 1) 
 	AND cand.baja=0
 	
+/*buscar vacantes iguales de una vacante                                           q.vac.iguales*/
+SELECT vac.id id_vacante
+FROM vacantes vac
+RIGHT JOIN(SELECT id_cliente, id_nombre_vacante
+		FROM vacantes vac
+		WHERE vac.id = 287) 
+AS dvac ON dvac.id_cliente = vac.id_cliente AND dvac.id_nombre_vacante = vac.id_nombre_vacante
+WHERE vac.id_status = 1 AND vac.id <> 287
+ORDER BY fecha
+LIMIT 1
+
+/*candidatos que se asignan a nueva vacante igual, cuando se cierra una vacante      			 q.following */
+SELECT *
+FROM vacantes_following vf
+WHERE vf.id_vacante =  259 
+AND id_proceso <> 5
+AND id_candidato <> 0
 
 
 /*kpi vacantes 				q.kpi.tiempo.proceso()*/
@@ -83,7 +119,6 @@ RIGHT JOIN
 AS va ON va.id = vf.id_vacante
 WHERE va.baja = 0
 AND va.id_usuario = 4 AND vf.fecha BETWEEN 20000101 AND 20181231
-
 
 
 /*embudo - todas las vacantes, como se comportaron los candidatos        q.embudo()*/
