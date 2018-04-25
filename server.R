@@ -9,7 +9,7 @@ shinyServer(function(input, output, session) {
      #cambiar a sys.date() para el programa, fuera del demo
      demo = T
      if(demo){
-          fecha.hoy <- ymd(20180215)  #registro follow 20180311
+          fecha.hoy <- ymd(20180225)  #registro follow 20180311
      } else {
           fecha.hoy = as_date(Sys.Date())
      }

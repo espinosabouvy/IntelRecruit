@@ -13,7 +13,6 @@ library(plotly)
 library(shinyalert) #install.packages('shinyalert')
 library(tibble)
 library(stringi)  #install.packager('stringi')
-# library(shinyjs)  #install.packages("shinyjs")
 library(rhandsontable) #install.packager('rhandsontable)
 # library(ggmap) #distancia entre cps
 
