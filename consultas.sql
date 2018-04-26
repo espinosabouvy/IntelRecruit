@@ -11,19 +11,40 @@ AND candidatos.`id` IN (  /*condicional a mis candidatos*/
 	WHERE id_vacante IN (
 		SELECT id id_vacante FROM vacantes WHERE id_usuario = 5 AND id_status=1)
 		)
-/*AND candidatos.`id`=517  /*condicional en R a un solo candidato*/
+AND candidatos.`id`=517  /*condicional en R a un solo candidato*/
 ORDER BY candidatos.id
 
 /*vacantes 						q.vacantes()*/
-SELECT vacantes.id, clientes.`nombre` AS 'cliente', vacantes_nombre.`nombre` AS 'vacante', fecha, vacantes_status.`nombre` AS 'status', 
-users.`user` AS 'asesor', clientes.`codigo_postal`
+SELECT vacantes.id, clientes.`nombre` AS 'cliente', vacantes_nombre.`nombre` AS 'vacante',
+	COUNT(DISTINCT(vf.id_candidato)) AS 'candidatos',
+	vacantes.fecha, vacantes_status.`nombre` AS 'status', users.`user` AS 'asesor',
+	clientes.`codigo_postal`
 FROM vacantes
 LEFT JOIN clientes ON clientes.id = vacantes.`id_cliente`
 LEFT JOIN vacantes_nombre ON vacantes_nombre.id = vacantes.`id_nombre_vacante`
 LEFT JOIN vacantes_status ON vacantes_status.id = vacantes.`id_status`
-LEFT JOIN users ON users.id = vacantes.`id_usuario`
-WHERE vacantes.`baja`=0
-AND vacantes.`id_status` IN (1,2) AND vacantes.`fecha` BETWEEN 20180101 AND 20180201  /*condicional en R*/
+RIGHT JOIN (SELECT * 
+        FROM vacantes_following
+	WHERE vacantes_following.`id_candidato` NOT IN (  /*quitar estos candidatos*/
+		SELECT DISTINCT(vf.id_candidato)
+		FROM vacantes_following vf
+		LEFT JOIN candidatos cand ON cand.id = vf.id_candidato
+		WHERE (vf.id_proceso = 5
+		OR cand.baja = 1))) 
+AS vf ON vf.id_vacante = vacantes.`id`
+LEFT JOIN users ON users.id = vacantes.`id_usuario` 
+WHERE vacantes.`baja`= 0 
+AND vacantes.`id_status` IN (1) AND vacantes.`fecha` >= 20180101 /*condicional en R*/
+GROUP BY id
+
+
+SELECT DISTINCT(vf.id_candidato)
+FROM vacantes_following vf
+LEFT JOIN candidatos cand ON cand.id = vf.id_candidato
+WHERE (vf.id_proceso = 5
+OR cand.baja = 1)
+AND vf.id_vacante = 257 
+
 
 
 /*clientes + con vacantes   						q.clientes()*/

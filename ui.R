@@ -14,7 +14,7 @@ library(shinyalert) #install.packages('shinyalert')
 library(tibble)
 library(stringi)  #install.packager('stringi')
 # library(shinyjs)  #install.packages("shinyjs")
-library(rhandsontable) #install.packager('rhandsontable)
+# library(rhandsontable) #install.packager('rhandsontable)
 # library(ggmap) #distancia entre cps
 
 # #poner text input lado a lado
@@ -52,7 +52,7 @@ dashboardPage(skin = "blue",
                                     actionBttn("cmd.guardar.proceso",  NULL, 
                                                style = "simple", color = "success", icon = icon("floppy-o"))
                                 ),
-                                box(title = 'ABC CANDIDATOS', width = 8, collapsible = T,
+                                box(title = 'ABC CANDIDATOS', width = 8, collapsible = T, collapsed = T,
                                     splitLayout(cellWidths = c("0%","40%","60%"),
                                                 textInput("Tid", "ID"),
                                                 textInput("Tnombre", "Nombre"),
