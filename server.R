@@ -45,11 +45,12 @@ shinyServer(function(input, output, session) {
      db.tabla.candidatos <- NULL
           new.candidatos <- reactiveVal(0)
      db.tabla.gastos <- NULL
+          new.gastos <- reactiveVal(0)
      db.bolsa.candidatos <- NULL
      db.bolsa.vacantes <- NULL
           new.vacantes <- reactiveVal(0)
      db.tabla.catalogo <- NULL
-     vacantes <- NULL
+     db.vacantes <- NULL
      datos.asignacion <- NULL
      c_sexo <- NULL
      c_escolaridad <- NULL
@@ -201,7 +202,7 @@ shinyServer(function(input, output, session) {
           con <- conectar()
           query <- paste0("SELECT vacantes.id, clientes.`nombre` AS 'cliente', vacantes_nombre.`nombre` AS 'vacante',
                           COUNT(DISTINCT(vf.id_candidato)) AS 'candidatos',
-                          vacantes.fecha, vacantes_status.`nombre` AS 'status', users.`user` AS 'asesor',
+                          vacantes.fecha, vacantes_status.`nombre` AS 'status', users.`nombre` AS 'asesor',
                           clientes.`codigo_postal`
                           FROM vacantes
                           LEFT JOIN clientes ON clientes.id = vacantes.`id_cliente`
@@ -1268,9 +1269,11 @@ shinyServer(function(input, output, session) {
                db.bolsa.candidatos <- q.bolsa.vacantes()
                
                #filtrar rechazados 
-               if(!is.null(input$ver.rechazados)) if(input$ver.rechazados==F) {
-                    db.bolsa.candidatos <- db.bolsa.candidatos%>%filter(id_proceso != 5)     
-               }
+               if(is.null(input$ver.rechazados)){
+                    db.bolsa.candidatos <- db.bolsa.candidatos%>%filter(id_proceso != 5)
+               } else { if(input$ver.rechazados == "Quitar rechazados") {
+                    db.bolsa.candidatos <- db.bolsa.candidatos%>%filter(id_proceso != 5)
+               }}
                
                db.bolsa.candidatos <- db.bolsa.candidatos%>%
                     mutate_if(is.character, as.factor)%>%
@@ -1464,10 +1467,11 @@ shinyServer(function(input, output, session) {
           
 
           output$tabla.gastos <- renderDataTable({
-               gastos <- cargar.gastos()
-               if(is.null(gastos)) return(NULL)
+               new.gastos()
+               gastos.raw <<- cargar.gastos()
+               if(is.null(gastos.raw)) return(NULL)
                
-               db.tabla.gastos <<- gastos%>%
+               db.tabla.gastos <<- gastos.raw%>%
                     mutate("prorrateo" = ifelse(id_comun ==0,"","SI"))%>%
                     select(id,concepto, "medio.asignado" = medio_asignado, fecha, monto, prorrateo)%>%
                     mutate_if(is.character, as.factor)%>%
@@ -1491,21 +1495,21 @@ shinyServer(function(input, output, session) {
                
                ren <- input$tabla.gastos_rows_selected
                if(is.null(ren)) return(NULL)
-               id_gasto <- row.names(db.tabla.gastos[ren,])
+               id_gasto <- as.integer(row.names(db.tabla.gastos[ren,]))
                cat(paste("Seleccionado gastos id:", id_gasto , "\n"))
                
-               #llenar datos arriba               
+               #llenar datos arriba
                updateTextInput(session, "Gid", value = id_gasto)
-               updatePickerInput(session,"gastos.conceptos",selected = gastos[gastos$id == id_gasto,]$concepto)
-               updateDateInput(session, inputId = "fecha.gasto", value = gastos[gastos$id == id_gasto,]$fecha)
+               updatePickerInput(session,"gastos.conceptos",selected = gastos.raw[gastos.raw$id == id_gasto,]$concepto)
+               updateDateInput(session, inputId = "fecha.gasto", value = gastos.raw[gastos.raw$id == id_gasto,]$fecha)
           
                #si prorrateado
-               if(gastos[gastos$id == id_gasto,]$id_comun==0){  #sin prorrateo
-                    seleccion <- gastos[gastos$id == id_gasto,]$medio_asignado
-                    monto <- gastos[gastos$id== id_gasto,]$monto
+               if(gastos.raw[gastos.raw$id == id_gasto,]$id_comun==0){  #sin prorrateo
+                    seleccion <- gastos.raw[gastos.raw$id == id_gasto,]$medio_asignado
+                    monto <- gastos.raw[gastos.raw$id== id_gasto,]$monto
                } else {
-                    seleccion <- gastos[gastos$id_comun == gastos[gastos$id == id_gasto,]$id_comun,]$medio_asignado
-                    monto <- gastos[gastos$id== id_gasto,]$monto*length(seleccion)
+                    seleccion <- gastos.raw[gastos.raw$id_comun == gastos.raw[gastos.raw$id == id_gasto,]$id_comun,]$medio_asignado
+                    monto <- gastos.raw[gastos.raw$id== id_gasto,]$monto*length(seleccion)
                }
                
                updatePickerInput(session,"gastos.medios", selected = seleccion)
@@ -1533,10 +1537,10 @@ shinyServer(function(input, output, session) {
                if(id !=""){
                     
                     #si prorrateado
-                    id_comun <- gastos[gastos$id == id,]$id_comun
+                    id_comun <- gastos.raw[gastos.raw$id == id,]$id_comun
                     texto <- "¿Estas seguro de borrar este gasto?"
                     if(id_comun!=0){  #sin prorrateo
-                         id <- paste(paste(as.integer(gastos[gastos$id_comun == id_comun,]$id), collapse = ","))
+                         id <- paste(paste(as.integer(gastos.raw[gastos.raw$id_comun == id_comun,]$id), collapse = ","))
                          texto <- "Esta gasto fue prorrateado en varios medios, se borraran todos estos prorrateos.\n
                          ¿Estas seguiro de borrar este gasto?"
                     }
@@ -1562,9 +1566,9 @@ shinyServer(function(input, output, session) {
                id <- input$Gid
 
                #si prorrateado
-               id_comun <- gastos[gastos$id == id,]$id_comun
+               id_comun <- gastos.raw[gastos.raw$id == id,]$id_comun
                if(id_comun!=0){  #sin prorrateo
-                    id <- paste(paste(as.integer(gastos[gastos$id_comun == id_comun,]$id), collapse = ","))
+                    id <- paste(paste(as.integer(gastos.raw[gastos.raw$id_comun == id_comun,]$id), collapse = ","))
                }
                
                qupdate <- paste0("UPDATE gastos SET baja = 1 WHERE id IN (" , id, ")")
@@ -1577,31 +1581,8 @@ shinyServer(function(input, output, session) {
                proxy = dataTableProxy('tabla.gastos', session)
                selectRows(proxy, selected = NULL)
                updateTextInput(session, "Gid", value = "")
-               
-               #actualiza tabla                   
-               output$tabla.gastos <- renderDataTable({
-                    gastos <<- cargar.gastos()
-                    if(is.null(gastos)) return(NULL)
-                    
-                    db.tabla.gastos <<- gastos%>%
-                         mutate("prorrateo" = ifelse(id_comun ==0,"","SI"))%>%
-                         select(id,concepto, "medio.asignado" = medio_asignado, fecha, monto, prorrateo)%>%
-                         mutate_if(is.character, as.factor)%>%
-                         tibble::column_to_rownames('id')
-                    
-                    datatable(data = db.tabla.gastos,
-                              rownames = T,
-                              selection = list(mode='single',
-                                               target = 'row'),
-                              filter = "top",
-                              autoHideNavigation = T,
-                              extensions = 'Scroller',
-                              options = list(dom = 't',
-                                             scrollX = TRUE,
-                                             scrollY = 400,
-                                             scroller = TRUE,
-                                             fixedHeader = TRUE))
-               })
+               new.gastos(new.gastos()+1)
+                              
           }
           
           observeEvent(input$cmd.guardar.gasto,{  #boton guardar
@@ -1669,11 +1650,11 @@ shinyServer(function(input, output, session) {
                     id_comun <- gastos[gastos$id == id,]$id_comun
                     if(id_comun!=0){  #sin prorrateo
                          id <- paste(paste(as.integer(gastos[gastos$id_comun == id_comun,]$id), collapse = ","))
-                    }
                     
-                    #borrar todos y guardar como nuevos (es mucho más sencillo que actualizar)
-                    qdelete <- paste0("DELETE FROM gastos WHERE id IN (" , id, ")")
-                    dbExecute(con,qdelete)
+                         #borrar todos y guardar como nuevos (es mucho más sencillo que actualizar)
+                         qdelete <- paste0("DELETE FROM gastos WHERE id IN (" , id, ")")
+                         dbExecute(con,qdelete)
+                    }
                }
                
                #insertar candidato y crear proceso inicial con fecha de hoy
@@ -1684,32 +1665,7 @@ shinyServer(function(input, output, session) {
                                  ")")
                dbExecute(con,qinsert)
                dbDisconnect(con) 
-               
-               #actualiza tabla                   
-               output$tabla.gastos <- renderDataTable({
-                    gastos <<- cargar.gastos()
-                    if(is.null(gastos)) return(NULL)
-                    
-                    db.tabla.gastos <<- gastos%>%
-                         mutate("prorrateo" = ifelse(id_comun ==0,"","SI"))%>%
-                         select(id,concepto, "medio.asignado" = medio_asignado, fecha, monto, prorrateo)%>%
-                         mutate_if(is.character, as.factor)%>%
-                         tibble::column_to_rownames('id')
-                    
-                    datatable(data = db.tabla.gastos,
-                              rownames = T,
-                              selection = list(mode='single',
-                                               target = 'row'),
-                              filter = "top",
-                              autoHideNavigation = T,
-                              extensions = 'Scroller',
-                              options = list(dom = 't',
-                                             scrollX = TRUE,
-                                             scrollY = 400,
-                                             scroller = TRUE,
-                                             fixedHeader = TRUE))
-               })
-               
+               new.gastos(new.gastos()+1)
           }
           
           #termina gastos--------------------------------------------------------------------
@@ -1928,23 +1884,6 @@ shinyServer(function(input, output, session) {
           })
           
           #ABC VACANTES ----------------------------------------------------------------------
-          output$tabla.vacantes <- DT::renderDataTable({
-               vacantes <- cargar.bolsa.vacantes(id_status = c(1,2), all = T)
-
-               datatable(data = vacantes,
-                         rownames = T,
-                         selection ='single', 
-                         filter = "top",
-                         autoHideNavigation = T,
-                         extensions = 'Scroller',
-                         options = list(dom = 'ft',
-                                        scrollX = TRUE,
-                                        scrollY = 600,
-                                        scroller = TRUE,
-                                        fixedHeader = TRUE))
-
-          })
-          
           output$tabla.vacantes.solo <- DT::renderDataTable({
                vacantes <- cargar.bolsa.vacantes(id_status = 1, id_usuario = id_user())
                
@@ -1962,6 +1901,184 @@ shinyServer(function(input, output, session) {
                
           })
           
+          output$tabla.vacantes <- DT::renderDataTable({
+               db.vacantes <<- q.vacantes(id_status = c(1,2), all = T)%>%
+                    tibble::column_to_rownames("id")
+               
+               datatable(data = db.vacantes%>%
+                              select(cliente, vacante, candidatos, fecha,
+                                                     asesor, codigo_postal),
+                         rownames = T,
+                         selection ='single', 
+                         filter = "top",
+                         autoHideNavigation = T,
+                         extensions = 'Scroller',
+                         options = list(dom = 't',
+                                        scrollX = TRUE,
+                                        scrollY = 400,
+                                        scroller = TRUE,
+                                        fixedHeader = TRUE))
+
+          })
+          
+          #detalle de candidatos y seguimiento de procesos
+          observeEvent(c(input$tabla.vacantes_rows_selected),{
+               
+               ren <- input$tabla.vacantes_rows_selected
+               id_vacante <- row.names(db.vacantes)[ren]
+               
+               #cargar en controles para editar, borrar o nuevo
+               db.vacantes$id <- row.names(db.vacantes)
+               updateTextInput(session, "Vid", value = id_vacante)               
+               updatePickerInput(session, "Vcliente", selected = db.vacantes[db.vacantes$id== id_vacante,]$cliente)
+               updatePickerInput(session, "Vvacante", selected = db.vacantes[db.vacantes$id== id_vacante,]$vacante)
+               updatePickerInput(session, "Vreclut", selected = db.vacantes[db.vacantes$id== id_vacante,]$asesor)
+               updateDateInput(session, "Vfecha", value = ymd(db.vacantes[db.vacantes$id== id_vacante,]$fecha))
+
+          })
+          
+          observeEvent(input$cmd.nuevo.vacante,{
+               #llenar datos arriba
+               updateTextInput(session, "Vid", value = "")
+               updateDateInput(session, "Vfecha",value = fecha.hoy)
+               
+               #quita renglon seleccionado
+               proxy = dataTableProxy('tabla.vacantes', session)
+               selectRows(proxy, selected = NULL)
+          })
+          
+          observeEvent(input$cmd.borrar.vacante, {
+               req(input$cmd.borrar.vacante)
+               id <- input$Vid
+               cat(paste("Borrando vacante:", id), "\n")
+               if(id !=""){
+                    #si prorrateado
+                    texto <- "Esto cerrara la vacante y los otros candidatos asignados a esta vacante se asignaran a otra vacante \n
+                         del mismo cliente y posicion si existiera o a la bolsa de candidatos \n
+                    ¿Estas seguro de registrar el proceso de ingreso?"  
+
+                    shinyalert(title = "Confirmar",
+                               text =  texto,
+                               closeOnEsc = TRUE,
+                               closeOnClickOutside = FALSE,
+                               html = FALSE,
+                               type = "warning",
+                               timer = 0,
+                               animation = TRUE,
+                               showConfirmButton = TRUE,
+                               showCancelButton = TRUE,
+                               confirmButtonText = "Si, eliminar vacante",
+                               confirmButtonCol = "#AEDEF4",
+                               cancelButtonText = "No, cancela eliminar",
+                               callbackR = function(x) if(x==T) eliminar.vacante())
+                    }
+          })
+
+          # eliminar.vacante <- function(){  #revisar si requiere nivel para hacer esto
+          #      id <- input$Gid
+          # 
+          #      #si prorrateado
+          #      id_comun <- gastos.raw[gastos.raw$id == id,]$id_comun
+          #      if(id_comun!=0){  #sin prorrateo
+          #           id <- paste(paste(as.integer(gastos.raw[gastos.raw$id_comun == id_comun,]$id), collapse = ","))
+          #      }
+          # 
+          #      qupdate <- paste0("UPDATE gastos SET baja = 1 WHERE id IN (" , id, ")")
+          # 
+          #      con <- conectar()
+          #      dbExecute(con,qupdate)
+          #      dbDisconnect(con)
+          # 
+          #      #quita seleccion
+          #      proxy = dataTableProxy('tabla.gastos', session)
+          #      selectRows(proxy, selected = NULL)
+          #      updateTextInput(session, "Gid", value = "")
+          #      new.gastos(new.gastos()+1)
+          # 
+          # }
+          # 
+          # observeEvent(input$cmd.guardar.gasto,{  #boton guardar
+          #      req(input$cmd.guardar.gasto)
+          #      id <- input$Gid
+          #      
+          #      if(id==""){ #si es nuevo - se confirma que se agregará el paso inicial como realizado
+          #           msg = "¿Estás seguro de querer guardar este gasto nuevo?"
+          #           
+          #      } else {
+          #           msg = "¿Estas seguro de guardar los cambios realizados?"
+          #      }
+          #      
+          #      shinyalert(title = "Confirmar", 
+          #                 text =  msg,
+          #                 closeOnEsc = TRUE,
+          #                 closeOnClickOutside = FALSE,
+          #                 html = FALSE,
+          #                 type = "warning",
+          #                 timer = 0,
+          #                 animation = TRUE,
+          #                 showConfirmButton = TRUE,
+          #                 showCancelButton = TRUE,
+          #                 confirmButtonText = "Si, guardar",
+          #                 confirmButtonCol = "#AEDEF4",
+          #                 cancelButtonText = "No, cancela",
+          #                 callbackR = function(x) if(x==T) guardar.gastos())
+          #      
+          # })
+          # 
+          # guardar.gastos <- function(){ #confirmar guardar
+          #      id <- input$Gid
+          #      cat(paste("Candidatos a modificar:", id), "\n")
+          #      
+          #      monto <- as.numeric(gsub("[^0-9\\.]","",input$gasto.monto))  #quita simbolos, deja solo el punto
+          #      id_medio <- as.integer(c_medio[c_medio$nombre %in% input$gastos.medios, 1])
+          #      num.medios <- length(id_medio)
+          #      id_concepto <- as.integer(c_concepto.gastos[c_concepto.gastos$nombre == input$gastos.conceptos,1])
+          #      
+          #      datos <- paste(do.call(paste, c(data.frame(
+          #           id_cliente = rep(0,num.medios),
+          #           id_concepto = rep(id_concepto,num.medios),
+          #           id_medio = id_medio,
+          #           id_asesor = rep(as.integer(id_user()),num.medios),
+          #           id_comun = ifelse(num.medios==1, 
+          #                             rep(0,num.medios),
+          #                             rep(format(Sys.time(), "%H%M%S"),num.medios)),
+          #           fecha = rep(gsub("-","",input$fecha.gasto),num.medios),
+          #           monto = rep(round(monto/num.medios,2),num.medios)), 
+          #           sep = ",")),collapse = "),(")
+          #      
+          #      con<- conectar()  
+          #      
+          #      if(id!= ""){  #modificando, no nuevo - borra y agrega nuevo
+          #           
+          #           msg <- ""
+          #           if(input$gasto.monto =="") msg = "Todos los campos deben ser llenados para registrar un gasto"
+          #           if(msg!=""){
+          #                sendSweetAlert(session, "Error", msg , type = "error")
+          #                dbDisconnect(con)
+          #                return(NULL)
+          #           }
+          #           
+          #           #si prorrateado debe borrar varios renglones
+          #           id_comun <- gastos[gastos$id == id,]$id_comun
+          #           if(id_comun!=0){  #sin prorrateo
+          #                id <- paste(paste(as.integer(gastos[gastos$id_comun == id_comun,]$id), collapse = ","))
+          #                
+          #                #borrar todos y guardar como nuevos (es mucho más sencillo que actualizar)
+          #                qdelete <- paste0("DELETE FROM gastos WHERE id IN (" , id, ")")
+          #                dbExecute(con,qdelete)
+          #           }
+          #      }
+          #      
+          #      #insertar candidato y crear proceso inicial con fecha de hoy
+          #      qinsert <- paste0("INSERT INTO gastos
+          #                        (id_cliente, id_concepto, id_medio, id_asesor, id_comun, fecha, monto) ",
+          #                        "VALUES (",
+          #                        datos,
+          #                        ")")
+          #      dbExecute(con,qinsert)
+          #      dbDisconnect(con) 
+          #      new.gastos(new.gastos()+1)
+          # }
           #terminar abc vacantes ---
           
           #ABC CLIENTES --------------------------------------------------------------------
@@ -2084,9 +2201,9 @@ shinyServer(function(input, output, session) {
      
      output$ui.ver.rechazados <- renderUI({
           if(cp$allow_rechazados==1){  #switch para ver rechazados (cp define si se ve)
-               materialSwitch(inputId = "ver.rechazados", 
-                              label = "Ver rechazados", value = F,
-                              status = "primary")
+               radioGroupButtons(inputId = "ver.rechazados", label = NULL, choices = c("Todos", "Quitar rechazados"), 
+                                 status = "danger", selected = "Quitar rechazados",
+                                 checkIcon = list(yes = icon("ok", lib = "glyphicon"), no = icon("remove",lib = "glyphicon")))
           }
      })
      
@@ -2144,13 +2261,17 @@ shinyServer(function(input, output, session) {
           c_concepto.gastos <<- dbGetQuery(con, "SELECT *  FROM gastos_conceptos WHERE baja = 0")
           c_catalogos <<- dbGetQuery(con, "SELECT * FROM catalogos")
           c_reclutadores <<- dbGetQuery(con, "SELECT * FROM users WHERE level = 'reclutador' AND baja = 0")
+          c_clientes <<- q.clientes()
+          c_vacantes <<- dbGetQuery(con, "SELECT * FROM vacantes_nombre WHERE baja = 0")
           dbDisconnect(con) 
           
           updatePickerInput(session, "cb.catalogo", choices = c_catalogos$descripcion)
-          
           updatePickerInput(session, "Cescolaridad", choices = c_escolaridad$nombre)
           updatePickerInput(session, "Csexo", choices = c_sexo$nombre)
           updatePickerInput(session, "Cmedio", choices = c_medio$nombre)
+          updatePickerInput(session, "Vreclut", choices = c_reclutadores$nombre)
+          updatePickerInput(session, "Vcliente", choices = c_clientes$nombre)
+          updatePickerInput(session, "Vvacante", choices = c_vacantes$nombre)
           
           output$menu.login <- renderMenu({
                sidebarMenu(
@@ -2170,13 +2291,13 @@ shinyServer(function(input, output, session) {
 
                output$menu.logged <- renderMenu({
                     sidebarMenu(
-                         menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer"),selected = T),
+                         menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer")),
                          menuItem("KPIs", tabName = "kpis", icon = icon("line-chart")),
                          uiOutput("ui.fechas"),
                          # uiOutput("ui.rango"),  #por semana, mes
                          uiOutput("ui.fechas.filtros.super"),
                          menuItem("CLIENTES", tabName = "abc-clientes", icon = icon("industry")),
-                         menuItem("VACANTES", tabName = "abc-vacantes", icon = icon("list")),
+                         menuItem("VACANTES", tabName = "abc-vacantes", icon = icon("list"), selected = T),
                          menuItem("METAS", tabName = "abc-metas", icon = icon("trophy")),
                          menuItem("USUARIOS", tabName = "abc-users", icon = icon("users")),
                          menuItem("CATALOGOS", tabName = "catalogos", icon = icon("table")),
@@ -2192,6 +2313,7 @@ shinyServer(function(input, output, session) {
                                                container=  'body',
                                                style = "btn-primary"))
                })
+               
           }
           
           if(level == "reclutador"){
