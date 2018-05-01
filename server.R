@@ -9,7 +9,7 @@ shinyServer(function(input, output, session) {
      #cambiar a sys.date() para el programa, fuera del demo
      demo = T
      if(demo){
-          fecha.hoy <- ymd(20180215)  #registro follow 20180311
+          fecha.hoy <- ymd(20180222)  #registro follow 20180311
      } else {
           fecha.hoy = as_date(Sys.Date())
      }
@@ -102,7 +102,7 @@ shinyServer(function(input, output, session) {
                                     ) ultimo ON ultimo.id_candidato = vf.id_candidato AND 
                                         ultimo.orden = vp.orden
                               LEFT JOIN vacantes vac ON vac.id = vf.id_vacante
-                              WHERE vf.id_proceso = 5 OR (vac.id_status = 2 AND vf.id_proceso <>4)
+                              WHERE vf.id_proceso = 5 OR ((vac.id_status = 2 OR vac.baja=1) AND vf.id_proceso <>4)
                               AND vf.`cambio_vacante` = 0)
                           AS va ON va.id_candidato = candidatos.`id`
                           LEFT JOIN c_sexo ON candidatos.`id_sexo` = c_sexo.`id`
@@ -258,7 +258,8 @@ shinyServer(function(input, output, session) {
                               LEFT JOIN vacantes_nombre ON vacantes_nombre.id = vacantes.`id_nombre_vacante`
                               LEFT JOIN vacantes_status ON vacantes_status.id = vacantes.`id_status`
                               LEFT JOIN users ON users.id = vacantes.`id_usuario`
-                              WHERE vacantes.id_status IN (", paste0(id_status, collapse = ","))
+                              WHERE vacantes.baja=0
+                              AND vacantes.id_status IN (", paste0(id_status, collapse = ","))
           
           if (all == F){ #agrega filtros a la consulta
                query <- paste(query, ") AND  vacantes.id_usuario= ", id_usuario)
@@ -295,7 +296,8 @@ shinyServer(function(input, output, session) {
 	                                   SELECT DISTINCT(id_candidato) 
                                         FROM vacantes_following vf
                                         WHERE id_vacante IN (
-                                        SELECT id id_vacante FROM vacantes WHERE id_usuario = 5 AND id_status= 1)
+                                        SELECT id id_vacante FROM vacantes WHERE id_usuario = ", id_user(), 
+                                        " AND id_status= 1)
                     )")     
           }
           
@@ -452,8 +454,8 @@ shinyServer(function(input, output, session) {
      output$menu.login <- renderMenu({
           sidebarMenu(
                menuItem("Ingresar al sistema", tabName = "portada", icon = icon('sign-in'),selected = T),
-               textInput("s.usuario","Usuario:",placeholder = "Usuario: demo",value = ""),
-               passwordInput("s.contra", "Contraseña:",placeholder = "Contraseña: a"),
+               textInput("s.usuario","Usuario:",placeholder = "Usuario: demo",value = "a"),
+               passwordInput("s.contra", "Contraseña:",placeholder = "Contraseña: a", value = "b"),
                actionBttn(inputId = "b.login", label = "Entrar", 
                           style = "jelly", color = "primary")
           )
@@ -1064,6 +1066,7 @@ shinyServer(function(input, output, session) {
                if (id_proceso==4) {
                     #buscar si hay más vacantes de este cliente y puesto
                     vac.iguales <- q.vac.iguales(id_vacante = id_vacante)
+                    
                     
                     if(nrow(vac.iguales)>0) { #crear registro nuevo para otros candidatos de esa misma vacante
                          registros <- q.following(id_vacante = id_vacante, id_candidato = id_candidato, rechazos = F)
@@ -1902,12 +1905,17 @@ shinyServer(function(input, output, session) {
           })
           
           output$tabla.vacantes <- DT::renderDataTable({
-               db.vacantes <<- q.vacantes(id_status = c(1,2), all = T)%>%
-                    tibble::column_to_rownames("id")
+               new.vacantes()
                
-               datatable(data = db.vacantes%>%
-                              select(cliente, vacante, candidatos, fecha,
-                                                     asesor, codigo_postal),
+               if(input$vacantes.cerradas =="Todas"){
+                    db.vacantes <<- q.vacantes(id_status = c(1,2), all = T)%>%
+                         tibble::column_to_rownames("id")
+               } else {
+                    db.vacantes <<- q.vacantes(id_status = c(1), all = T)%>%
+                         tibble::column_to_rownames("id")
+               }
+               
+               datatable(data = db.vacantes,
                          rownames = T,
                          selection ='single', 
                          filter = "top",
@@ -1953,9 +1961,8 @@ shinyServer(function(input, output, session) {
                cat(paste("Borrando vacante:", id), "\n")
                if(id !=""){
                     #si prorrateado
-                    texto <- "Esto cerrara la vacante y los otros candidatos asignados a esta vacante se asignaran a otra vacante \n
-                         del mismo cliente y posicion si existiera o a la bolsa de candidatos \n
-                    ¿Estas seguro de registrar el proceso de ingreso?"  
+                    texto <- "Los candidatos asignados a esta vacante se asignaran a otra vacante del mismo cliente y posicion si existiera o a la bolsa de candidatos \n
+                    ¿Estas seguro de borrar la vacante?"  
 
                     shinyalert(title = "Confirmar",
                                text =  texto,
@@ -1973,30 +1980,31 @@ shinyServer(function(input, output, session) {
                                callbackR = function(x) if(x==T) eliminar.vacante())
                     }
           })
+          
+          
+          eliminar.vacante <- function(){  #revisar si requiere nivel para hacer esto
+               id_vacante <- input$Vid
+               
+               #buscar si hay más vacantes de este cliente y puesto
+               vac.iguales <- q.vac.iguales(id_vacante = id_vacante)
+               
+               if(nrow(vac.iguales)>0) { #crear registro nuevo para otros candidatos de esa misma vacante
+                    registros <- q.following(id_vacante = id_vacante, id_candidato = 0, rechazos = F)
+                    
+                    if(nrow(registros)>0) {  #hay registros por cambiar de vacante (cambia fecha de procesos a hoy)
+                         fun.cambiar.vacante(datos = registros, fecha.nueva = fecha.hoy, vacante.nva = vac.iguales$id_vacante)
+                    }
+               }
+               
+               con <- conectar()
+               qupdate <- paste0("UPDATE vacantes SET baja = 1 WHERE id= ", id_vacante)
+               dbExecute(con,qupdate)
+               dbDisconnect(con)
+               
+               new.vacantes(new.vacantes()+1)  #forzar actualizacion vacantes
 
-          # eliminar.vacante <- function(){  #revisar si requiere nivel para hacer esto
-          #      id <- input$Gid
-          # 
-          #      #si prorrateado
-          #      id_comun <- gastos.raw[gastos.raw$id == id,]$id_comun
-          #      if(id_comun!=0){  #sin prorrateo
-          #           id <- paste(paste(as.integer(gastos.raw[gastos.raw$id_comun == id_comun,]$id), collapse = ","))
-          #      }
-          # 
-          #      qupdate <- paste0("UPDATE gastos SET baja = 1 WHERE id IN (" , id, ")")
-          # 
-          #      con <- conectar()
-          #      dbExecute(con,qupdate)
-          #      dbDisconnect(con)
-          # 
-          #      #quita seleccion
-          #      proxy = dataTableProxy('tabla.gastos', session)
-          #      selectRows(proxy, selected = NULL)
-          #      updateTextInput(session, "Gid", value = "")
-          #      new.gastos(new.gastos()+1)
-          # 
-          # }
-          # 
+          }
+
           # observeEvent(input$cmd.guardar.gasto,{  #boton guardar
           #      req(input$cmd.guardar.gasto)
           #      id <- input$Gid
@@ -2125,6 +2133,12 @@ shinyServer(function(input, output, session) {
           output$menu.reclut <- renderMenu({
                sidebarMenu()
           })
+          
+          #reset variables
+          new.seguimiento(new.seguimiento()+1)
+          new.candidatos(new.candidatos()+1)
+          new.gastos(new.gastos()+1)
+          new.vacantes(new.vacantes()+1)
           
      })
      
