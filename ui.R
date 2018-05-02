@@ -125,8 +125,24 @@ dashboardPage(skin = "blue",
                         tabItem("abc-users",
                                 DT::dataTableOutput("tabla.usuarios")),
                         tabItem("abc-clientes",
-                                checkboxInput("clientes.activos","Solo clientes con
-                                              vacantes activas", value = T),
+                                box(
+                                   id = "clientes.box", title = "ABC clientes", width = 12, collapsible = T,
+                                    splitLayout(cellWidths = c("0%","40%","55%"),
+                                                textInput("Ctid", "ID"),
+                                                textInput("Ctcliente","Cliente"),
+                                                textInput("Ctdireccion","Direccion")
+                                    ),
+                                    splitLayout(cellWidths = c("30%","30%"),
+                                                textInput("Cttelefono","Telefono"),
+                                                textInput("Ctcp","Codigo Postal")
+                                    ),
+                                    actionBttn("cmd.nuevo.cliente", NULL, style = "simple",color = "primary", icon = icon("plus")),
+                                    actionBttn("cmd.guardar.cliente",  NULL, style = "simple", color = "success", icon = icon("floppy-o")),
+                                    actionBttn("cmd.borrar.cliente",  NULL, style = "simple", color = 'danger', icon = icon("minus"))
+                                ),
+                                radioGroupButtons(inputId = "clientes.activos", label = "Filtrar", choices = c("Todos", "Con vacantes activas"), 
+                                                  status = "primary", selected = "Con vacantes activas",
+                                                  checkIcon = list(yes = icon("ok", lib = "glyphicon"), no = icon("remove",lib = "glyphicon"))),
                                 DT::dataTableOutput("tabla.clientes"),
                                 busyIndicator("Cargando clientes...", wait = 1)
                                 ),

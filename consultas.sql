@@ -1,4 +1,4 @@
-/*candidatos 				q.candidatos() */
+﻿/*candidatos 				q.candidatos() */
 SELECT candidatos.id, candidatos.nombre, cp, c_sexo.`nombre` AS 'sexo', c_escolaridad.`nombre`AS 'escolaridad', fecha_nacimiento, medios.`nombre` AS 'medio', direccion 
 FROM candidatos
 LEFT JOIN c_sexo ON candidatos.`id_sexo` = c_sexo.`id`
@@ -47,13 +47,17 @@ AND vf.id_vacante = 257
 
 
 /*clientes + con vacantes   						q.clientes()*/
-SELECT clientes.*, IF(COUNT(vacantes_abiertas.id_cliente)>0,1,0) AS 'con_vacantes' 
-FROM clientes
-LEFT JOIN (
-	SELECT id_cliente FROM vacantes WHERE id_status = 1) 
-AS vacantes_abiertas ON vacantes_abiertas.id_cliente = clientes.`id`
-WHERE clientes.`baja`=0
-GROUP BY clientes.`id`
+SELECT nombre, codigo_postal, telefono, direccion, vacantes_abiertas 
+FROM (
+	SELECT clientes.*, COUNT(vacantes_abiertas.id_cliente) AS 'vacantes_abiertas' 
+	FROM clientes
+	LEFT JOIN (
+		SELECT id_cliente FROM vacantes WHERE id_status = 1) 
+	AS vacantes_abiertas ON vacantes_abiertas.id_cliente = clientes.`id`
+	WHERE clientes.`baja`= 0
+	GROUP BY clientes.`id`) as vacantes_activos
+WHERE vacantes_abiertas > 0
+
 
 
 /*seguimiento de candidatos - 							q.seguimiento*/
