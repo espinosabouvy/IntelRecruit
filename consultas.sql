@@ -14,6 +14,19 @@ AND candidatos.`id` IN (  /*condicional a mis candidatos*/
 AND candidatos.`id`=517
 ORDER BY candidatos.id
 
+/*usuarios con las vacantes abiertas			q.usuarios*/
+SELECT users.*, IFNULL(abiertas,0) 'vacantes_abiertas'
+FROM users
+LEFT JOIN (
+	SELECT id_usuario, COUNT(id) 'abiertas'
+	FROM vacantes 
+	WHERE baja = 0 
+	AND id_status IN (1)
+	GROUP BY id_usuario) va
+on va.id_usuario = users.id
+WHERE users.baja = 0
+
+
 /*vacantes 						q.vacantes()*/
 SELECT vacantes.id, clientes.`nombre` AS 'cliente', vacantes_nombre.`nombre` AS 'vacante',
 	COUNT(DISTINCT(vf.id_candidato)) AS 'candidatos',
@@ -37,6 +50,7 @@ WHERE vacantes.`baja`= 0
 AND vacantes.`id_status` IN (1) AND vacantes.`fecha` >= 20180101 /*condicional en R*/
 GROUP BY id
 ORDER BY cliente
+
 
 SELECT DISTINCT(vf.id_candidato)
 FROM vacantes_following vf

@@ -54,6 +54,8 @@ shinyServer(function(input, output, session) {
           new.clientes <- reactiveVal(0)
      db.tabla.metas <- NULL
           new.metas <- reactiveVal(0)
+     db.tabla.users <- NULL
+          new.users <- reactiveVal(0)
      db.vacantes <- NULL
      datos.asignacion <- NULL
      c_sexo <- NULL
@@ -220,7 +222,7 @@ shinyServer(function(input, output, session) {
                           LEFT JOIN clientes ON clientes.id = vacantes.`id_cliente`
                           LEFT JOIN vacantes_nombre ON vacantes_nombre.id = vacantes.`id_nombre_vacante`
                           LEFT JOIN vacantes_status ON vacantes_status.id = vacantes.`id_status`
-                          RIGHT JOIN (SELECT * 
+                          LEFT JOIN (SELECT * 
                               FROM vacantes_following
                               WHERE vacantes_following.`id_candidato` NOT IN (  /*quitar estos candidatos*/
                                    SELECT DISTINCT(vf.id_candidato)
@@ -230,7 +232,7 @@ shinyServer(function(input, output, session) {
                                    OR cand.baja = 1))) 
                           AS vf ON vf.id_vacante = vacantes.`id`
                           LEFT JOIN users ON users.id = vacantes.`id_usuario` 
-                          WHERE vacantes.`baja`=0 
+                          WHERE vacantes.`baja`= 0 
                           AND vacantes.id_status IN (", paste(id_status,collapse = ",") 
                               ,")
                           AND vacantes.fecha >= ", gsub("-","",ymd(date.inicio)))
@@ -245,6 +247,26 @@ shinyServer(function(input, output, session) {
           dbDisconnect(con)
           
           consulta$fecha <- ymd(consulta$fecha)
+          return(consulta)
+     }
+     
+     #usuarios y sus vacantes abiertas
+     q.usuarios <- function(id_status = c(1,2)){
+          con <- conectar()
+          query <- paste0("SELECT users.*, IFNULL(abiertas,0) 'vacantes_abiertas'
+                          FROM users
+                          LEFT JOIN (
+                              SELECT id_usuario, COUNT(id) 'abiertas'
+                              FROM vacantes 
+                              WHERE baja = 0 
+                              AND id_status IN (",paste(id_status,collapse = ",") ,") 
+                              GROUP BY id_usuario) 
+                          va on va.id_usuario = users.id
+                          WHERE users.baja = 0")
+          
+          consulta <- dbGetQuery(con, query)
+          dbDisconnect(con)
+          
           return(consulta)
      }
      
@@ -485,26 +507,67 @@ shinyServer(function(input, output, session) {
      
      #observa cuando se hace click en login
      observeEvent(input$b.login,{
+          
           con <- conectar()
-          query <- paste0("SELECT id, user,nombre,level FROM users WHERE baja = 0 AND
-                          user = '", input$s.usuario ,
-                          "' AND pass = '",sha1(input$s.contra, 10),"'")
-          logins <- dbGetQuery(con, query)
+          #verifica reset de la contraseña
+          query <- paste0("SELECT id, reset FROM users WHERE
+                              user = '", input$s.usuario ,
+                          "' AND baja = 0 AND reset = 1")
+          reset <- dbGetQuery(con, query)
           dbDisconnect(con)
           
-          if (nrow(logins)>0){
-               level <<- logins$level
-               nombre <<- logins$nombre
-               id_user(logins$id)
-               cargar_menus()
+          if(nrow(reset)>0){ #reset contrasena
+               shinyalert("Informacion","Solicitaste un cambio de contraseña,
+                          la contraseña que escribiste sera registrada con tu nueva contraseña",
+                          closeOnEsc = TRUE,
+                          closeOnClickOutside = FALSE,
+                          html = FALSE,
+                          type = "warning",
+                          timer = 0,
+                          animation = TRUE,
+                          showConfirmButton = TRUE,
+                          showCancelButton = TRUE,
+                          confirmButtonText = "Si, guarda la contrasena",
+                          confirmButtonCol = "#AEDEF4",
+                          cancelButtonText = "No, cancela",
+                          callbackR = function(x) if(x==T) guarda.contra(id = reset$id))
           } else {
-               # sendSweetAlert(session, "Incorrecto","Usuario o contraseña incorrectos",
-               #                "error")
-               output$menu.logged <- renderMenu({
-                    sidebarMenu(h5("Usuario o contraseña incorrectos"))
-               })
+               con <- conectar()
+               query <- paste0("SELECT id, user,nombre,level FROM users WHERE baja = 0 
+                               AND user = '", input$s.usuario ,
+                               "' AND pass = '",sha1(input$s.contra, 10),"'")
+               logins <- dbGetQuery(con, query)
+               dbDisconnect(con)
+               
+               if (nrow(logins)>0){
+                    level <<- logins$level
+                    nombre <<- logins$nombre
+                    id_user(logins$id)
+                    cargar_menus()
+               } else {
+                    # sendSweetAlert(session, "Incorrecto","Usuario o contraseña incorrectos",
+                    #                "error")
+                    output$menu.logged <- renderMenu({
+                         sidebarMenu(h5("Usuario o contraseña incorrectos"))
+                    })
+               }
           }
      })
+     
+     guarda.contra <- function(id = NULL){
+          #guarda la nueva contra
+          qupdate <- paste0("UPDATE users
+                                 SET pass = '", sha1(input$s.contra, 10), "',
+                                  reset = 0
+                                  WHERE id = " , id)
+          con <- conectar()
+          dbExecute(con, qupdate)
+          dbDisconnect(con)
+          shinyalert("Informacion","Ahora puedes entrar con tu nueva contraseña", 
+                     closeOnEsc = TRUE,
+                     closeOnClickOutside = FALSE,
+                     type = "info")
+     }
      
      #KPI'S ----------------------------------------------------------
      fun.kpi.tiempos <- reactive({
@@ -953,13 +1016,8 @@ shinyServer(function(input, output, session) {
           
           #las vacantes pueden estar abiertas o cerradas, pero no puede perderse
           #un candidato
-          if (level == "super") {
-               seguimiento <<- q.seguimiento(id_status = c(1,2), all = T)%>%
-                    mutate_if(is.character, as.factor)
-          } else {
-               seguimiento <<- q.seguimiento(id_status = c(1), id_usuario = id_user(), all = F)%>%
-                    mutate_if(is.character, as.factor)
-          }
+          seguimiento <<- q.seguimiento(id_status = c(1), id_usuario = id_user(), all = F)%>%
+               mutate_if(is.character, as.factor)
           
           #formatear
           datos <- seguimiento%>%
@@ -975,6 +1033,8 @@ shinyServer(function(input, output, session) {
      output$tabla.seguimiento <- DT::renderDataTable({
           new.seguimiento()
           tabla.de.seguimiento <<- cargar.seguimiento()
+          
+          if(nrow(tabla.de.seguimiento)==0)return(NULL)
           
           tabla.print <- tabla.de.seguimiento%>%
                select(everything(), -id_vacante)
@@ -1159,7 +1219,7 @@ shinyServer(function(input, output, session) {
           
           output$ui.ccliente <- renderUI({
                pickerInput("Cclientes","Clientes",
-                           choices = unique(vacantes$cliente),
+       s                    choices = unique(vacantes$cliente),
                            options = list('dropupAuto' = T, 'mobile'=T))
           })
      })
@@ -1167,8 +1227,9 @@ shinyServer(function(input, output, session) {
      observeEvent(input$cmd.borrar.candidato, {
           req(input$cmd.borrar.candidato)
           id <- input$Tid
-          cat(paste("Borrando candidato:", id), "\n")
+          
           if(id !=""){
+               cat(paste("Borrando candidato:", id), "\n")
                
                shinyalert(title = "Confirmar", 
                           text =  "¿Estas seguro de borrar este candidato?",
@@ -1435,19 +1496,21 @@ shinyServer(function(input, output, session) {
                           LEFT JOIN vacantes_procesos vp ON vp.id = vf.`id_proceso`
                           LEFT JOIN candidatos cand ON cand.id = vf.`id_candidato`
                           WHERE vf.cambio_vacante = 0
-                          AND vf.`id_candidato` IN (", paste0(id.cand, collapse=",") , ")")
+                          AND vf.`id_candidato` IN (", paste0(id.cand, collapse=",") , ") 
+                          ORDER BY orden DESC")
           con <- conectar()
           datos.asignacion <<- dbGetQuery(con, query)
           dbDisconnect(con)
           
           if(nrow(datos.asignacion)>1) { #llevo varios procesos de reclutamiento
-               todos <- datos.asignacion%>%
-                    filter(cierra_proceso== 0)%>%
-                    arrange(orden)%>%
-                    select(proceso)
+               todos <- datos.asignacion[datos.asignacion$cierra_proceso==0,]$proceso
                
-               showModal(selectinputModal(nombre = unique(datos.asignacion[datos.asignacion$cierra_proceso== 0,]$nombre),
-                                          todos.procesos = todos), session)
+               nombre = unique(datos.asignacion[datos.asignacion$cierra_proceso== 0,]$nombre)
+               mensaje = paste("<b>", nombre,  "</b><br>llego hasta el proceso de <strong>", todos[1] , 
+                               "</strong><br>¿Cual es la ultima etapa del proceso anterior que reutilizaras?")
+               showModal(selectinputModal(etiqueta = mensaje, opciones.seleccionar = todos,
+                                          nombre.selinput = "que.proceso",
+                                          nombre.ok = "ok.asignar",label.boton = "Asignar"), session)
                
           } else { 
                fun.cambiar.vacante(reg.escribir = datos.asignacion, reg.marcar = datos.asignacion,
@@ -1460,7 +1523,21 @@ shinyServer(function(input, output, session) {
           
 
      }
-
+     
+     #crea un selectinput modal, personalizado
+     selectinputModal <- function(failed = FALSE, etiqueta = NULL ,
+                                  opciones.seleccionar = NULL, nombre.selinput = "que.proceso",
+                                  nombre.ok = "ok.asignar", label.boton = "Asignar") {
+          modalDialog(
+               selectInput(nombre.selinput, HTML(etiqueta),
+                           choices = opciones.seleccionar, multiple = F),
+               footer = tagList(
+                    modalButton("Cancelar"),
+                    actionButton(inputId = nombre.ok, label = label.boton)
+               )
+          )
+     }
+     
      observeEvent(input$ok.asignar,{
           removeModal(session)
           cuales.dejar <- c_procesos%>%
@@ -1519,19 +1596,6 @@ shinyServer(function(input, output, session) {
           new.seguimiento(new.seguimiento()+1)  #forzar actualizacion a seguimiento de vacantes
      }
      
-     selectinputModal <- function(failed = FALSE, nombre = NULL, 
-                                  todos.procesos = NULL) {
-          modalDialog(
-               selectInput("que.proceso", HTML(
-                           paste("<b>", nombre,  "</b><br>llego hasta el proceso de <b>", tail(todos.procesos,1)$proceso , 
-                                 "</b><br>¿Cual es la ultima etapa del proceso anterior que reutilizaras?")),
-                         choices = todos.procesos$proceso, multiple = F, selected = tail(todos.procesos,1)$proceso),
-               footer = tagList(
-                    modalButton("Cancelar"),
-                    actionButton("ok.asignar", "Asignar")
-               )
-          )
-     }
      #TERMINA ASIGNACION DE CANDIDATOS A VACANTES--
      
      
@@ -2122,20 +2186,276 @@ shinyServer(function(input, output, session) {
      
      #ABC USUARIOS -----------------------------------------------------------------
      output$tabla.usuarios <- DT::renderDataTable({
+          new.users()
+          
           con <- conectar()
-          logins <- dbGetQuery(con, 'SELECT * FROM users')
+          logins <- q.usuarios(id_status = 1) #solo vacs abiertas
           dbDisconnect(con)
           
-          datos <- logins%>%select("NOMBRE" = nombre,
-                                   "USUARIO" = user,
-                                   "CONTRASEÑA" = pass,
-                                   "NIVEL" = level)
-          datatable(data = datos,
-                    rownames = F,
-                    selection ='none',
+          db.tabla.users <<- logins%>%
+               tibble::column_to_rownames("id")%>%
+               select(nombre, vacantes_abiertas, "nivel" = level, "usuario" = user, "contraseña" = pass)
+          
+          datatable(data = db.tabla.users,
+                    rownames = T,
+                    selection = list(mode='single',
+                                     target = 'row'),
+                    filter = "none",
                     autoHideNavigation = T,
-                    options = list(dom = 't'))
+                    extensions = 'Scroller',
+                    options = list(dom = 't',
+                                   scrollX = TRUE,
+                                   scrollY = 400,
+                                   scroller = TRUE,
+                                   fixedHeader = TRUE))
      })
+     
+     observeEvent(input$tabla.usuarios_rows_selected, {
+          ren <- input$tabla.usuarios_rows_selected
+          if(is.null(ren)) return(NULL)
+          id <- row.names(db.tabla.users)[ren]
+          cat(paste("Seleccionado usuario id:", id , "\n"))
+          
+          #llenar datos arriba               
+          updateTextInput(session, "Uid", value = id)
+          updateTextInput(session, "Uvac",value = db.tabla.users[ren,]$vacantes_abiertas)
+          updateTextInput(session, "Unombre",value = db.tabla.users[ren,]$nombre)
+          updateTextInput(session, "Uuser",value = db.tabla.users[ren,]$usuario)
+          updatePickerInput(session, "Ulevel",selected = db.tabla.users[ren,]$nivel)
+     })
+     
+     observeEvent(input$cmd.nuevo.user,{
+          updateTextInput(session, "Uid", value = "")
+          updateTextInput(session, "Uvac", value = "")
+          updateTextInput(session, "Unombre",value = "")
+          updateTextInput(session, "Uuser",value = "")
+
+          #quita renglon seleccionado
+          proxy = dataTableProxy('tabla.usuarios', session)
+          selectRows(proxy, selected = NULL)
+     })
+     
+     observeEvent(input$cmd.borrar.user,{
+          id <- input$Uid
+          
+          cat(paste("Borrando usuario:", id, "\n"))
+          if(id !=""){
+               texto <- paste("Se te pedira que asignes a otro reclutador para sus vacantes abiertas.
+                              ¿Estas seguro de borrar este usuario?")
+               shinyalert(title = "Confirmar",
+                          text =  texto,
+                          closeOnEsc = TRUE,
+                          closeOnClickOutside = FALSE,
+                          html = FALSE,
+                          type = "warning",
+                          timer = 0,
+                          animation = TRUE,
+                          showConfirmButton = TRUE,
+                          showCancelButton = TRUE,
+                          confirmButtonText = "Si, eliminar usuario",
+                          confirmButtonCol = "#AEDEF4",
+                          cancelButtonText = "No, cancela eliminar",
+                          callbackR = function(x) if(x==T) eliminar.usuario())
+          }
+     })
+
+     eliminar.usuario <- function(){
+          id <- input$Uid
+          nombre <- input$Unombre
+          num.vacantes <- input$Uvac
+          
+          if(num.vacantes>0){
+          #a quien asignar sus vacantes
+          mensaje = paste(nombre, "tiene", num.vacantes, "abiertas. <br>
+                          Elige el reclutador al que seras asignadas sus vacantes")
+          opciones <- c_reclutadores[c_reclutadores$nombre != nombre & c_reclutadores$level == "reclutador",]$nombre
+          
+          showModal(selectinputModal(etiqueta = mensaje, opciones.seleccionar = opciones,
+                                     nombre.selinput = "que.reclut",
+                                     nombre.ok = "ok.reasignar.vacantes",label.boton = "Asignar"), session)
+          } else {
+               qupdate <- paste0("UPDATE users
+                                 SET baja = 1 WHERE id = " , id)
+               con <- conectar()
+               dbExecute(con,qupdate)
+               dbDisconnect(con)
+     
+               updateTextInput(session, "Uid", value = "id")
+               updateTextInput(session, "Uvac", value = "id")
+               updateTextInput(session, "Unombre",value = "")
+               updateTextInput(session, "Uuser",value = "")
+
+               new.users(new.users()+1)
+          }
+     }
+     
+     observeEvent(input$ok.reasignar.vacantes, {
+          removeModal(session)
+          id_reclut_actual <- input$Uid
+          id_reclut_nvo <- as.integer(c_reclutadores[c_reclutadores$nombre == input$que.reclut,]$id)
+          
+          qupdate <- paste0("UPDATE vacantes
+                            SET id_usuario =", id_reclut_nvo,
+                            " WHERE id_usuario = ", id_reclut_actual)
+          
+          con <- conectar()
+          dbExecute(con,qupdate)
+          
+          #baja del usuario
+          qupdate.user <- paste0("UPDATE users
+                                 SET baja = 1 WHERE id = " , id_reclut_actual)
+          dbExecute(con,qupdate.user)
+          dbDisconnect(con)
+          
+          updateTextInput(session, "Uid", value = "id")
+          updateTextInput(session, "Uvac", value = "id")
+          updateTextInput(session, "Unombre",value = "")
+          updateTextInput(session, "Uuser",value = "")
+          
+          new.users(new.users()+1)
+          
+     })
+     
+     observeEvent(input$cmd.guardar.user,{  #boton guardar
+          id <- input$Uid
+          s.nombre <- input$Unombre
+          s.usuario <- input$Uuser
+          s.level <- input$Ulevel
+          
+          cat(paste("Modificando o agregando user", id, "\n"))
+          
+          errores = 0
+          if(s.nombre =="") errores = errores + 1
+          if(s.usuario =="") errores = errores + 1
+          
+          if(grepl("[^a-zA-Z0-9]", s.usuario)){
+               shinyalert("Error", "El usuario debe contener solo letras o numeros, sin puntuacion y sin espacios" , type = "error")
+               return(NULL)
+          }
+               
+          if(errores>0){
+               shinyalert("Error", "Se deben completar todos los campos" , type = "error")
+               return(NULL)
+          }
+
+          if(id == ""){ #si es nuevo - se confirma que se agregará el paso inicial como realizado
+               msg = paste("¿Estás seguro de querer guardar este usuario?")
+          } else {
+               msg = paste("¿Estas seguro de guardar los cambios realizados a este usuario?")
+          }
+
+          shinyalert(title = "Confirmar",
+                     text =  msg,
+                     closeOnEsc = TRUE,
+                     closeOnClickOutside = FALSE,
+                     html = FALSE,
+                     type = "warning",
+                     timer = 0,
+                     animation = TRUE,
+                     showConfirmButton = TRUE,
+                     showCancelButton = TRUE,
+                     confirmButtonText = "Si, guardar",
+                     confirmButtonCol = "#AEDEF4",
+                     cancelButtonText = "No, cancela",
+                     callbackR = function(x) if(x==T) guardar.usuario())
+
+     })
+
+     guardar.usuario <- function(){ #confirmar guardar
+          id <- input$Uid
+          s.nombre <- toupper(input$Unombre)
+          s.usuario <- input$Uuser
+          s.level <- input$Ulevel
+          
+          con <- conectar()
+          if(id == "") { #nuevo registro
+               #revisar que no exista el usuario
+               otros <- dbGetQuery(con, paste0("SELECT id FROM users WHERE user = '", s.usuario, 
+                                   "' AND baja = 0"))
+               if(nrow(otros)>0) {
+                    shinyalert("Informacion","Ese nombre de usuario ya existe, elija otro",
+                               closeOnEsc = TRUE,
+                               closeOnClickOutside = FALSE,
+                               html = FALSE,
+                               type = "warning")
+                    return(NULL)
+               }
+               
+               #insertar candidato y crear proceso inicial con fecha de hoy
+               qinsert <- paste0("INSERT INTO users
+                                 (user, level, nombre, baja, reset)
+                                 VALUES ('", s.usuario, 
+                                 "','" , s.level,
+                                 "','", s.nombre,
+                                 "', 0, 1)")
+               dbExecute(con,qinsert)
+               
+          } else {
+               otros <- dbGetQuery(con, paste0("SELECT id FROM users WHERE user = '", s.usuario, 
+                                               "' AND baja = 0 AND id <> ",id))
+               if(nrow(otros)>0) {
+                    shinyalert("Informacion","Ese nombre de usuario ya existe, elija otro",
+                               closeOnEsc = TRUE,
+                               closeOnClickOutside = FALSE,
+                               html = FALSE,
+                               type = "warning")
+                    return(NULL)
+               }
+               
+               qupdate <- paste0("UPDATE users
+                                 SET user = '", s.usuario,
+                                 "', level = '", s.level ,
+                                 "', nombre = '", s.nombre,
+                                 "', baja = 0, reset = 0
+                                  WHERE id = " , id)
+
+               dbExecute(con,qupdate)
+          }
+
+          dbDisconnect(con)
+          new.users(new.users()+1)
+     }
+     
+     observeEvent(input$cmd.reset.user,{
+          id <- input$Uid
+          s.nombre <- toupper(input$Unombre)
+          
+          if(id == "") return(NULL) #si es nuevo - se confirma que se agregará el paso inicial como realizado
+          
+          msg = paste("¿Estás seguro de permitir una contraseña nueva para", s.nombre,"?\n
+                      La proxima vez que se registre, se guardara su nueva contraseña")
+          shinyalert(title = "Confirmar",
+                     text =  msg,
+                     closeOnEsc = TRUE,
+                     closeOnClickOutside = FALSE,
+                     html = FALSE,
+                     type = "warning",
+                     timer = 0,
+                     animation = TRUE,
+                     showConfirmButton = TRUE,
+                     showCancelButton = TRUE,
+                     confirmButtonText = "Si, resetear",
+                     confirmButtonCol = "#AEDEF4",
+                     cancelButtonText = "No, cancela",
+                     callbackR = function(x) if(x==T) reset.contra(id= id))
+          
+     })
+     
+     reset.contra <- function(id = NULL){
+          con <- conectar()
+          qupdate <- paste0("UPDATE users
+                                 SET reset = 1
+                                  WHERE id = " , id)
+          dbExecute(con, qupdate)
+          
+          dbDisconnect(con)
+          shinyalert("Informacion","El usuario ya puede ingresar con una nueva contraseña",
+                     closeOnEsc = TRUE,
+                     closeOnClickOutside = FALSE,
+                     html = FALSE,
+                     type = "info")
+     }
+     
      #termina abc usuarios
      
      #ABC VACANTES ----------------------------------------------------------------------
@@ -2538,6 +2858,7 @@ shinyServer(function(input, output, session) {
           new.gastos(new.gastos()+1)
           new.vacantes(new.vacantes()+1)
           new.clientes(new.clientes()+1)
+          new.users(new.users()+1)
           
      })
      
@@ -2682,9 +3003,14 @@ shinyServer(function(input, output, session) {
           updatePickerInput(session, "Cescolaridad", choices = c_escolaridad$nombre)
           updatePickerInput(session, "Csexo", choices = c_sexo$nombre)
           updatePickerInput(session, "Cmedio", choices = c_medio$nombre)
-          updatePickerInput(session, "Vreclut", choices = c_reclutadores$nombre)
           updatePickerInput(session, "Vcliente", choices = c_clientes$nombre)
           updatePickerInput(session, "Vvacante", choices = c_vacantes$nombre)
+          updatePickerInput(session, "Vreclut", choices = c_reclutadores$nombre)
+          
+          observeEvent(new.users(), {
+               a <- isolate(new.users())
+               updatePickerInput(session, "Vreclut", choices = c_reclutadores$nombre)
+          })
           
           output$menu.login <- renderMenu({
                sidebarMenu(
@@ -2694,7 +3020,7 @@ shinyServer(function(input, output, session) {
                )
           })
 
-          if(level == "super"){
+          if(level == "supervisor"){
                
                output$menu.reclut <- renderMenu({
                     sidebarMenu(
@@ -2704,15 +3030,14 @@ shinyServer(function(input, output, session) {
 
                output$menu.logged <- renderMenu({
                     sidebarMenu(
-                         menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer"), selected = T),
-                         menuItem("KPIs", tabName = "kpis", icon = icon("line-chart")),
                          uiOutput("ui.fechas"),
-                         # uiOutput("ui.rango"),  #por semana, mes
                          uiOutput("ui.fechas.filtros.super"),
+                         menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer")),
+                         menuItem("KPIs", tabName = "kpis", icon = icon("line-chart")),
                          menuItem("CLIENTES", tabName = "abc-clientes", icon = icon("industry")),
                          menuItem("VACANTES", tabName = "abc-vacantes", icon = icon("list")),
                          menuItem("METAS", tabName = "abc-metas", icon = icon("trophy")),
-                         menuItem("USUARIOS", tabName = "abc-users", icon = icon("users")),
+                         menuItem("USUARIOS", tabName = "abc-users", icon = icon("users"), selected = T),
                          menuItem("CATALOGOS", tabName = "catalogos", icon = icon("table")),
                          id = "Menu.super"
                     )
@@ -2720,6 +3045,7 @@ shinyServer(function(input, output, session) {
                
                #combos de elegir reclutadores
                output$ui.reclut <- renderUI({
+                    new.users()
                     pickerInput("reclut", label = "Datos de", 
                                 inline = F, multiple = F, choices = c_reclutadores$nombre, 
                                 options = list('dropupAuto' = T, 'mobile'=T,
