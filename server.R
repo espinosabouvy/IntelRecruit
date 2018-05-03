@@ -91,37 +91,42 @@ shinyServer(function(input, output, session) {
      
      q.bolsa.vacantes <- function(){
           con <- conectar()
-          query <- paste0("
-                         SELECT candidatos.id, candidatos.nombre, vacantes.vacante_original, vacantes.cliente_original, va.id_proceso, va.ultimo_proceso, va.razon_rechazo, cp, c_sexo.`nombre` AS 'sexo', 
-                          c_escolaridad.`nombre`AS 'escolaridad', fecha_nacimiento, medios.`nombre` AS 'medio', direccion 
+          query <- paste0("SELECT candidatos.id, candidatos.nombre, vacantes.vacante_original, vacantes.cliente_original, va.id_proceso, va.ultimo_proceso, va.razon_rechazo, cp, c_sexo.`nombre` AS 'sexo', 
+                              c_escolaridad.`nombre`AS 'escolaridad', fecha_nacimiento, medios.`nombre` AS 'medio', direccion 
                           FROM candidatos
                           RIGHT JOIN (
-                              SELECT vf.id_candidato, vf.`id_vacante`, vf.id_proceso, vp.`nombre` ultimo_proceso, vf.id_razon_rechazo, rr.`nombre` razon_rechazo
+                              SELECT vf.id_candidato, vf.`id_vacante`, vf.id_proceso, vp.`nombre` ultimo_proceso,
+                                   vf.id_razon_rechazo, rr.`nombre` razon_rechazo, vac.id_status
                               FROM vacantes_following vf
                               LEFT JOIN vacantes_procesos vp ON vp.id = vf.id_proceso
                               LEFT JOIN razones_rechazo rr ON rr.`id` = vf.`id_razon_rechazo`
                               RIGHT JOIN (
-                                   SELECT vf.id_candidato, MAX(vp.orden) orden
-                                    FROM vacantes_following vf
-                                    LEFT JOIN vacantes_procesos vp ON vp.id = vf.id_proceso
-                                    GROUP BY id_candidato
-                                    ) ultimo ON ultimo.id_candidato = vf.id_candidato AND 
-                                        ultimo.orden = vp.orden
+                                   SELECT vf.id_candidato, MAX(vp.orden) orden /*orden max de vacante actual*/
+                                   FROM vacantes_following vf
+                                   LEFT JOIN vacantes_procesos vp ON vp.id = vf.id_proceso
+                                   WHERE vf.cambio_vacante = 0
+                                   GROUP BY id_candidato
+                              ) ultimo ON ultimo.id_candidato = vf.id_candidato 
+                              AND ultimo.orden = vp.orden
                               LEFT JOIN vacantes vac ON vac.id = vf.id_vacante
-                              WHERE vf.id_proceso = 5 OR ((vac.id_status = 2 OR vac.baja=1) AND vf.id_proceso <>4)
-                              AND vf.`cambio_vacante` = 0)
+                              WHERE (vf.id_proceso = 5 AND vf.cambio_vacante = 0) 
+                                   OR (vac.id_status = 2 AND (vf.id_proceso <> 4 AND vf.cambio_vacante = 0))
+                              ORDER BY vf.id_candidato
+                              )  
                           AS va ON va.id_candidato = candidatos.`id`
                           LEFT JOIN c_sexo ON candidatos.`id_sexo` = c_sexo.`id`
                           LEFT JOIN c_escolaridad ON candidatos.`id_escolaridad` = c_escolaridad.`id`
                           LEFT JOIN medios ON medios.`id` = candidatos.`id_medio`
                           LEFT JOIN (
-                              SELECT vac.`id`, vn.`nombre` AS 'vacante_original', clientes.`nombre` AS 'cliente_original', vac.`id_status`
+                              SELECT vac.`id`, vn.`nombre` AS 'vacante_original', 
+                                   clientes.`nombre` AS 'cliente_original', vac.`id_status`
                               FROM vacantes AS vac
                               LEFT JOIN vacantes_nombre AS vn ON vn.`id`= vac.`id_nombre_vacante`
                               LEFT JOIN clientes ON clientes.`id`= vac.`id_cliente`) 
                           AS vacantes ON vacantes.`id` = va.id_vacante
                           WHERE candidatos.`baja`=0
                           ORDER BY id_candidato")
+          
           consulta <- dbGetQuery(con, query)
           consulta$fecha_nacimiento <- ymd(consulta$fecha_nacimiento)
           return(consulta)
@@ -206,10 +211,11 @@ shinyServer(function(input, output, session) {
      
      q.vacantes <- function(id_status=c(1,2), id_usuario= id_user(), all=F, date.inicio= 20000101){
           con <- conectar()
-          query <- paste0("SELECT vacantes.id, clientes.`nombre` AS 'cliente', vacantes_nombre.`nombre` AS 'vacante',
-                          COUNT(DISTINCT(vf.id_candidato)) AS 'candidatos',
-                          vacantes.fecha, vacantes_status.`nombre` AS 'status', users.`nombre` AS 'asesor',
-                          clientes.`codigo_postal`
+          query <- paste0("SELECT vacantes.id, clientes.`nombre` AS 'cliente', 
+                              vacantes_nombre.`nombre` AS 'vacante',
+                              COUNT(DISTINCT(vf.id_candidato)) AS 'candidatos',
+                              vacantes.fecha, vacantes_status.`nombre` AS 'status', users.`nombre` AS 'asesor',
+                              clientes.`codigo_postal`
                           FROM vacantes
                           LEFT JOIN clientes ON clientes.id = vacantes.`id_cliente`
                           LEFT JOIN vacantes_nombre ON vacantes_nombre.id = vacantes.`id_nombre_vacante`
@@ -220,7 +226,7 @@ shinyServer(function(input, output, session) {
                                    SELECT DISTINCT(vf.id_candidato)
                                    FROM vacantes_following vf
                                    LEFT JOIN candidatos cand ON cand.id = vf.id_candidato
-                                   WHERE (vf.id_proceso = 5
+                                   WHERE ((vf.id_proceso = 5  AND vf.cambio_vacante=0)
                                    OR cand.baja = 1))) 
                           AS vf ON vf.id_vacante = vacantes.`id`
                           LEFT JOIN users ON users.id = vacantes.`id_usuario` 
@@ -245,37 +251,38 @@ shinyServer(function(input, output, session) {
      #seguimiento a candidatos en proceso, vacantes abiertas y/o cerradas
      q.seguimiento <- function(id_status=1, id_usuario= id_user(), all=F){
           con <- conectar()
-          query <- paste0("SELECT cand.id as 'id_candidato', cand.nombre  AS 'candidato', cand.escolaridad, cand.sexo, cand.medio, vacantes_detalle.*, vp.orden AS 'orden_proceso',
-                          vp.id AS 'id_proceso', vp.nombre AS 'proceso', 
-                          vf.fecha, vf.comentarios FROM vacantes_following AS vf
-                          LEFT JOIN (
-                              SELECT candidatos.id, candidatos.nombre, candidatos.baja, c_sexo.`nombre` AS 'sexo', esc.`nombre` AS 'escolaridad', medios.`nombre` AS 'medio' 
+          query <- paste0("SELECT cand.id AS 'id_candidato', cand.nombre  AS 'candidato', cand.escolaridad, cand.sexo, cand.medio, vacantes_detalle.*, vp.orden AS 'orden_proceso',
+                              vp.id AS 'id_proceso', vp.nombre AS 'proceso', 
+                              vf.fecha, vf.comentarios 
+                          FROM vacantes_following AS vf
+                          LEFT JOIN 
+                              (SELECT candidatos.id, candidatos.nombre, candidatos.baja, c_sexo.`nombre` AS 'sexo', esc.`nombre` AS 'escolaridad', medios.`nombre` AS 'medio' 
                               FROM candidatos
                               LEFT JOIN c_sexo ON c_sexo.`id` = candidatos.`id_sexo`
                               LEFT JOIN c_escolaridad AS esc ON esc.id = candidatos.`id_escolaridad`
                               LEFT JOIN medios ON medios.`id` = candidatos.`id_medio`) 
-                              AS cand ON cand.`id` = vf.`id_candidato`
+                          AS cand ON cand.`id` = vf.`id_candidato`
                           LEFT JOIN vacantes_procesos AS vp ON vp.id = vf.id_proceso
                           RIGHT JOIN(
-                              SELECT vacantes.`id` as 'id_vacante',clientes.`nombre` as 'cliente', vacantes_nombre.`nombre` AS 'vacante',
+                              SELECT vacantes.`id` AS 'id_vacante',clientes.`nombre` AS 'cliente', vacantes_nombre.`nombre` AS 'vacante',
                                    vacantes_status.`nombre` AS 'status', users.id AS 'id_user', users.`nombre` AS 'asesor' 
                               FROM vacantes
                               LEFT JOIN clientes ON clientes.id = vacantes.`id_cliente`
                               LEFT JOIN vacantes_nombre ON vacantes_nombre.id = vacantes.`id_nombre_vacante`
                               LEFT JOIN vacantes_status ON vacantes_status.id = vacantes.`id_status`
                               LEFT JOIN users ON users.id = vacantes.`id_usuario`
-                              WHERE vacantes.baja=0
-                              AND vacantes.id_status IN (", paste0(id_status, collapse = ","))
-          
-          if (all == F){ #agrega filtros a la consulta
-               query <- paste(query, ") AND  vacantes.id_usuario= ", id_usuario)
-          }
-          
-          query <- paste(query,") AS vacantes_detalle ON vacantes_detalle.id_vacante = vf.`id_vacante`
+                              WHERE vacantes.baja = 0 AND vacantes.id_status IN (", paste0(id_status, collapse = ","),")
+                                   AND vacantes.id_usuario IN (", paste0(id_usuario, collapse = ",") , "))
+                         AS vacantes_detalle ON vacantes_detalle.id_vacante = vf.`id_vacante`
                          WHERE vf.id_candidato NOT IN 
-                              (SELECT DISTINCT(vacantes_following.id_candidato) FROM vacantes_following
-                              LEFT JOIN vacantes_procesos on vacantes_procesos.id = vacantes_following.id_proceso
-                              WHERE vacantes_procesos.cierra_proceso = 1) AND cand.baja = 0")
+                              (SELECT DISTINCT(vacantes_following.id_candidato) 
+                              FROM vacantes_following
+                              LEFT JOIN vacantes_procesos ON vacantes_procesos.id = vacantes_following.id_proceso
+                              WHERE (vacantes_procesos.cierra_proceso = 1 AND vacantes_following.cambio_vacante = 0)
+                              ORDER BY id_candidato) 
+                          AND cand.baja=0
+                          AND vf.cambio_vacante=0
+                          ORDER BY cliente, candidato")
           
           consulta <- dbGetQuery(con, query)
           dbDisconnect(con)
@@ -370,9 +377,10 @@ shinyServer(function(input, output, session) {
      
      q.embudo <- function(id.status.vacantes = c(1,2), id_usuario= id_user(), all=F, date.inicio=20000101){
           con <- conectar()
-          query <- paste0("SELECT vacantes.id, clientes.`nombre`, vacantes_nombre.`nombre` AS 'vacante', 
-               vacantes.fecha as 'fecha_vacante', vacantes_status.`nombre` AS 'status', 
-               vacantes.`id_usuario`, users.`user` AS 'asesor' , vf.* 
+          query <- paste0("
+               SELECT vacantes.id, clientes.`nombre`, vacantes_nombre.`nombre` AS 'vacante', 
+                    vacantes.fecha as 'fecha_vacante', vacantes_status.`nombre` AS 'status', 
+                    vacantes.`id_usuario`, users.`user` AS 'asesor' , vf.* 
                FROM vacantes
                LEFT JOIN clientes ON clientes.id = vacantes.`id_cliente`
                LEFT JOIN vacantes_nombre ON vacantes_nombre.id = vacantes.`id_nombre_vacante`
@@ -388,9 +396,11 @@ shinyServer(function(input, output, session) {
                			LEFT JOIN c_sexo ON c_sexo.`id` = cand.id_sexo
                			LEFT JOIN c_escolaridad ON c_escolaridad.id = cand.id_escolaridad
                			LEFT JOIN medios ON medios.`id` = cand.id_medio	 
-               			) AS cand ON cand.id= vacantes_following.`id_candidato`
-               	LEFT JOIN vacantes_procesos AS proc ON proc.id = vacantes_following.`id_proceso`
-                ) AS vf ON vf.id_vacante = vacantes.`id` 
+               			) 
+                              AS cand ON cand.id= vacantes_following.`id_candidato`
+               	          LEFT JOIN vacantes_procesos AS proc ON proc.id = vacantes_following.`id_proceso`
+                WHERE vacantes_following.cambio_vacante=0)
+                AS vf ON vf.id_vacante = vacantes.`id` 
                 WHERE vacantes.`baja`=0 ")
                           
            if (all == F){ #agrega filtros a la consulta status, usuario y fechas
@@ -466,8 +476,8 @@ shinyServer(function(input, output, session) {
      output$menu.login <- renderMenu({
           sidebarMenu(
                menuItem("Ingresar al sistema", tabName = "portada", icon = icon('sign-in'),selected = T),
-               textInput("s.usuario","Usuario:",placeholder = "Usuario: demo",value = "a"),
-               passwordInput("s.contra", "Contraseña:",placeholder = "Contraseña: a", value = "b"),
+               textInput("s.usuario","Usuario:",placeholder = "User: reclut o super"),
+               passwordInput("s.contra", "Contraseña:",placeholder = "Pass: 1234"),
                actionBttn(inputId = "b.login", label = "Entrar", 
                           style = "jelly", color = "primary")
           )
@@ -518,14 +528,18 @@ shinyServer(function(input, output, session) {
           #leer metas
           con <- conectar()
           meta <- dbGetQuery(con, "SELECT valor, fecha_inicio FROM metas_kpi
-                              WHERE id_meta = 1")%>%arrange(fecha_inicio)
+                              WHERE baja=0 AND id_meta = 1")%>%
+               group_by(fecha_inicio)%>%
+               summarise(valor = max(valor))%>%
+               arrange(fecha_inicio)
+          
           dbDisconnect(con)
           meta$fecha_inicio <- ymd(meta$fecha_inicio)
           #meta$semana <- paste(year(meta$fecha_inicio),"-",week(meta$fecha_inicio))
           
           #crear valores
           fechas.meta <- data.frame("FECHA" =seq(min(kpi.tiempo$fecha_vacante), 
-                                                 max(fecha.hoy+7), by = "week"))
+                                                 max(fecha.hoy + 7), by = "week"))
           meta.solicitudes <- data.frame("FECHA" = fechas.meta)
           meta.solicitudes <- merge(meta.solicitudes, meta)%>%
                mutate("META" = ifelse(FECHA>fecha_inicio, valor, 0),
@@ -550,15 +564,18 @@ shinyServer(function(input, output, session) {
                summarise("CANDIDATOS"= n())%>%
                group_by(asesor, SEMANA)%>%
                summarise("POR.VACANTE" = mean(CANDIDATOS))%>%
-               merge(meta.solicitudes, by = "SEMANA", all.x = T)
+               merge(meta.solicitudes, by = "SEMANA", all.x = T)%>%
+               mutate("MAX" = max(c(POR.VACANTE, META),na.rm = T)+1)
           
+          if(nrow(datos)==0)return(NULL)
           
           ggplot(datos, aes(SEMANA, POR.VACANTE, group = 1)) + 
                geom_point() +
-               geom_line(col = "dodgerblue2", lwd=1) + 
-               geom_smooth(stat = "smooth", method = "lm", se = F) + 
+               geom_smooth(stat = "smooth", method = "lm", se = F, linetype= "dashed",col = "purple") + 
+               geom_area(aes(SEMANA, MAX), fill = "green4", alpha = 0.3) +
+               geom_area(aes(SEMANA, META), fill = "red", alpha = 0.4) +
                geom_line(aes(SEMANA, META), group =2, col = "green4") +
-               geom_area(aes(SEMANA, META), fill = "red", alpha = 0.1) +
+               geom_line(col = "darkmagenta", lwd=1) + 
                theme(legend.position = 'top') + 
                ylab("Solicitudes") + 
                xlab("Año-Semana")
@@ -571,7 +588,11 @@ shinyServer(function(input, output, session) {
           
           con <- conectar()
           meta <- dbGetQuery(con, "SELECT valor, fecha_inicio FROM metas_kpi
-                             WHERE id_meta = 2")%>%arrange(fecha_inicio)
+                             WHERE baja=0 AND id_meta = 2")%>%
+               group_by(fecha_inicio)%>%
+               summarise(valor = max(valor))%>%
+               arrange(fecha_inicio)
+          
           dbDisconnect(con)
           meta$fecha_inicio <- ymd(meta$fecha_inicio)
           #meta$semana <- paste(year(meta$fecha_inicio),"-",week(meta$fecha_inicio))
@@ -605,15 +626,18 @@ shinyServer(function(input, output, session) {
                summarise("DIAS.VACANTE" = min(DIAS.ABIERTA))%>%
                group_by(asesor, SEMANA)%>%
                summarise("X.DIAS.VACANTE" = as.numeric(round(mean(DIAS.VACANTE),1)))%>%
-               merge(meta.tiempo, by = "SEMANA", all.x = T)
+               merge(meta.tiempo, by = "SEMANA", all.x = T)%>%
+               mutate("MAX" = max(c(X.DIAS.VACANTE, META))+1)
           
+          if(nrow(dias.prom.vacante)==0) return(NULL)
           
           ggplot(dias.prom.vacante, aes(SEMANA, X.DIAS.VACANTE, group = 1)) + 
                geom_point() +
-               geom_line(lwd=1, col = "dodgerblue2") + 
-               geom_smooth(stat = "smooth", method = "lm", se = F) + 
+               geom_smooth(stat = "smooth", method = "lm", se = F, linetype= "dashed", col = "purple") + 
+               geom_area(aes(SEMANA, META), fill = "green3", alpha = 0.6) +
+               geom_area(aes(SEMANA, MAX), fill = "red", alpha = 0.3) +
                geom_line(aes(SEMANA, META), group = 2, col = "green4") +
-               geom_area(aes(SEMANA, META), fill = "green3", alpha = 0.1) +
+               geom_line(lwd=1, col = "darkmagenta") + 
                theme(legend.position = 'top') + 
                ylab("Dias promedio") + 
                xlab("Año-Semana")
@@ -626,7 +650,11 @@ shinyServer(function(input, output, session) {
           
           con <- conectar()
           meta <- dbGetQuery(con, "SELECT valor, fecha_inicio FROM metas_kpi
-                             WHERE id_meta = 3")%>%arrange(fecha_inicio)
+                             WHERE id_meta = 3 AND BAJA = 0")%>%
+               group_by(fecha_inicio)%>%
+               summarise(valor = max(valor))%>%
+               arrange(fecha_inicio)
+          
           dbDisconnect(con)
           meta$fecha_inicio <- ymd(meta$fecha_inicio)
           #meta$semana <- paste(year(meta$fecha_inicio),"-",week(meta$fecha_inicio))
@@ -666,22 +694,26 @@ shinyServer(function(input, output, session) {
                mutate("ACUM.VACANTES" = cumsum(VACANTES),
                       "ACUM.CERRADAS" = cumsum(CERRADAS),
                       "PCT.CERRADO" = round(ACUM.CERRADAS/ACUM.VACANTES*100,0))%>%
-               merge(meta.cerradas, by = "SEMANA", all.x=T)
+               merge(meta.cerradas, by = "SEMANA", all.x=T)%>%
+               mutate("MAX" = 100)
           
-                         
+          
+          if(nrow(pct.cerradas)==0) return(NULL)
+          
           ggplot(pct.cerradas, aes(SEMANA, PCT.CERRADO, group = 1)) + 
                geom_point()+
-               geom_line(lwd=1, col = "dodgerblue2") + 
-               geom_smooth(stat = "smooth", method = "lm", se = F) + 
-               geom_area(aes(SEMANA, META), fill = "red", alpha = 0.1) +
+               geom_smooth(stat = "smooth", method = "lm", se = F, linetype= "dashed", col = "purple") + 
+               geom_area(aes(SEMANA, MAX), fill = "green4", alpha = 0.3) +
+               geom_area(aes(SEMANA, META), fill = "red", alpha = 0.4) +
                geom_line(aes(SEMANA, META), col = 'green4') +
+               geom_line(lwd=1, col = "darkmagenta") + 
                theme(legend.position = 'top') + 
                ylab("Porcentaje") + 
                xlab("Año-Semana") + 
                coord_cartesian(ylim = c(0, 100))
           
      })
-     #termina graficos de kpis-----------------------------------------------------------------
+     #termina graficos de kpis--
           
      #SCOREBOARD ------------------------------------------------------------------------------
      
@@ -1082,7 +1114,8 @@ shinyServer(function(input, output, session) {
                     registros <- q.following(id_vacante = id_vacante, id_candidato = id_candidato, rechazos = F)
                     
                     if(nrow(registros)>0) {  #hay registros por cambiar de vacante
-                         fun.cambiar.vacante(datos = registros, fecha.nueva = NULL, vacante.nva = vac.iguales$id_vacante)
+                         fun.cambiar.vacante(reg.escribir = registros, reg.marcar = registros,
+                                             fecha.nueva = NULL, vacante.nva = vac.iguales$id_vacante)
                     }
                }
                
@@ -1369,50 +1402,93 @@ shinyServer(function(input, output, session) {
           id.cand <- row.names(db.bolsa.candidatos)[ren.cand]
           if(is.null(ren.cand)) return(NULL)
           
+          msg  = "¿Estas seguro que deseas asignar este candidato a la vacante seleccionada?"
+          shinyalert(title = "Confirmar", 
+                     text =  msg,
+                     closeOnEsc = TRUE,
+                     closeOnClickOutside = FALSE,
+                     html = FALSE,
+                     type = "warning",
+                     timer = 0,
+                     animation = TRUE,
+                     showConfirmButton = TRUE,
+                     showCancelButton = TRUE,
+                     confirmButtonText = "Si, quiero asignarlo",
+                     confirmButtonCol = "#AEDEF4",
+                     cancelButtonText = "No, cancela asignacion",
+                     callbackR = function(x) if(x==T) asignar.a.vacante())
+     })
+          
+     asignar.a.vacante <- function(){
+          ren.vac <- input$tabla.bolsa.vacantes_rows_selected
+          id.vac <- row.names(db.bolsa.vacantes)[ren.vac]
+          if(is.null(ren.vac)) return(NULL)
+          
+          ren.cand <- input$tabla.bolsa.candidatos_rows_selected
+          id.cand <- row.names(db.bolsa.candidatos)[ren.cand]
+          if(is.null(ren.cand)) return(NULL)
+
           #preguntar uno por uno, desde donde comenzar nuevamente el proceso y copiar
           #los procesos ya realizado, con fecha de hoy (ayudará a su indicador)
-          
-          query <- paste0("SELECT cand.nombre, vf.*, vp.orden, vp.nombre proceso
-                    FROM vacantes_following vf
-                    LEFT JOIN vacantes_procesos vp ON vp.id = vf.`id_proceso`
-                    LEFT JOIN candidatos cand ON cand.id = vf.`id_candidato`
-                    WHERE vf.`id_candidato` IN (", paste0(id.cand, collapse=",") , ")")
+          query <- paste0("SELECT cand.nombre, vf.*, vp.orden, vp.nombre proceso, vp.cierra_proceso
+                          FROM vacantes_following vf
+                          LEFT JOIN vacantes_procesos vp ON vp.id = vf.`id_proceso`
+                          LEFT JOIN candidatos cand ON cand.id = vf.`id_candidato`
+                          WHERE vf.cambio_vacante = 0
+                          AND vf.`id_candidato` IN (", paste0(id.cand, collapse=",") , ")")
           con <- conectar()
           datos.asignacion <<- dbGetQuery(con, query)
           dbDisconnect(con)
           
-          if(nrow(datos.asignacion[datos.asignacion$id_candidato== id.cand,])>1) { #llevo varios procesos
-               todos <- datos.asignacion%>%filter(id_candidato== id.cand)%>%arrange(orden)%>%select(proceso)
+          if(nrow(datos.asignacion)>1) { #llevo varios procesos de reclutamiento
+               todos <- datos.asignacion%>%
+                    filter(cierra_proceso== 0)%>%
+                    arrange(orden)%>%
+                    select(proceso)
                
-               showModal(selectinputModal(nombre = unique(datos.asignacion[datos.asignacion$id_candidato== id.cand,]$nombre),
+               showModal(selectinputModal(nombre = unique(datos.asignacion[datos.asignacion$cierra_proceso== 0,]$nombre),
                                           todos.procesos = todos), session)
                
-          } else { fun.guardar.asignacion(datos = datos.asignacion) }
+          } else { 
+               fun.cambiar.vacante(reg.escribir = datos.asignacion, reg.marcar = datos.asignacion,
+                                   fecha.nueva = fecha.hoy, 
+                                   vacante.nva = id.vac)
+               #actualiza tablas
+               new.vacantes(new.vacantes()+1)
+               new.candidatos(new.candidatos()+1)
+          }
           
-     })
-     
+
+     }
+
      observeEvent(input$ok.asignar,{
           removeModal(session)
           cuales.dejar <- c_procesos%>%
                filter(orden <= max(c_procesos[c_procesos$nombre ==input$que.proceso,]$orden))%>%
                select(id)
-          datos.asignacion <- datos.asignacion%>%
+          datos.dejar <- datos.asignacion%>%
                filter(id_proceso == cuales.dejar$id)
           
           #vacante nueva
           ren.vac <- input$tabla.bolsa.vacantes_rows_selected
           id.vac <- row.names(db.bolsa.vacantes)[ren.vac]
           
-          fun.cambiar.vacante(datos = datos.asignacion, fecha.nueva = fecha.hoy, 
+          fun.cambiar.vacante(reg.escribir = datos.dejar, reg.marcar = datos.asignacion,
+                              fecha.nueva = fecha.hoy, 
                               vacante.nva = id.vac)
+          
+          #actualiza tablas
+          new.vacantes(new.vacantes()+1)
+          new.candidatos(new.candidatos()+1)
      })
      
      
-     fun.cambiar.vacante <- function(datos = NULL, fecha.nueva = fecha.hoy,
+     fun.cambiar.vacante <- function(reg.escribir = NULL, reg.marcar = NULL,
+                                     fecha.nueva = fecha.hoy,
                                      vacante.nva = NULL){
 
           # num.cand <- length(datos$id_proceso)
-          datos<- datos%>%
+          datos<- reg.escribir%>%
                mutate("nva.vacante" = vacante.nva,
                       "fecha.nva" = ifelse(is.null(fecha.nueva),as.integer(fecha), gsub("-","",ymd(fecha.nueva))))
                       
@@ -1424,7 +1500,7 @@ shinyServer(function(input, output, session) {
                                                  id_razon_rechazo = ifelse(is.na(id_razon_rechazo),0,id_razon_rechazo)), 
                sep = ",")),collapse = "),(")
           
-          cat(paste("Copiando registros de vacante", unique(datos$id_vacante), "a nva vacante", unique(datos$nva.vacante) ,"\n"))
+          cat(paste("Copiando registros del candidato", unique(datos$id_candidato) , "de vacante", unique(datos$id_vacante), "a nva vacante", unique(datos$nva.vacante) ,"\n"))
           qinsert <- paste0("INSERT INTO vacantes_following
                             (id_candidato, id_vacante, id_proceso, fecha, comentarios, id_razon_rechazo) ",
                             "VALUES (", valores, ")")
@@ -1432,10 +1508,10 @@ shinyServer(function(input, output, session) {
           dbExecute(con,qinsert)
           
           #marcar resgistro anterior como cambio de vacante
-          cat(paste("Marcando registros de vacante", unique(datos$id), "como cambio vacante \n"))
+          cat(paste("Marcando registros de vacante following", unique(reg.marcar$id), "como cambio vacante \n"))
           qupdate <- paste0("UPDATE vacantes_following
                             SET cambio_vacante = 1
-                            WHERE id IN (", paste0(datos$id, collapse = ",") ,")")
+                            WHERE id IN (", paste0(reg.marcar$id, collapse = ",") ,")")
           dbExecute(con, qupdate)
           dbDisconnect(con)
           
@@ -2167,7 +2243,7 @@ shinyServer(function(input, output, session) {
                registros <- q.following(id_vacante = id_vacante, id_candidato = 0, rechazos = F)
                
                if(nrow(registros)>0) {  #hay registros por cambiar de vacante (cambia fecha de procesos a hoy)
-                    fun.cambiar.vacante(datos = registros, fecha.nueva = fecha.hoy, vacante.nva = vac.iguales$id_vacante)
+                    fun.cambiar.vacante(reg.escribir = registros, reg.marcar = registros, fecha.nueva = fecha.hoy, vacante.nva = vac.iguales$id_vacante)
                }
           }
           
@@ -2441,8 +2517,8 @@ shinyServer(function(input, output, session) {
           output$menu.login <- renderMenu({
                sidebarMenu(
                     menuItem("Ingresar al sistema", tabName = "portada", icon = icon('sign-in'),selected = T),
-                    textInput("s.usuario","Usuario:",placeholder = "Usuario: demo"),
-                    passwordInput("s.contra", "Contraseña:",placeholder = "Contraseña: a"),
+                    textInput("s.usuario","Usuario:",placeholder = "User: reclut o super"),
+                    passwordInput("s.contra", "Contraseña:",placeholder = "Pass: 1234"),
                     actionBttn(inputId = "b.login", label = "Entrar", 
                                style = "jelly", color = "primary")
                )
@@ -2628,14 +2704,14 @@ shinyServer(function(input, output, session) {
 
                output$menu.logged <- renderMenu({
                     sidebarMenu(
-                         menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer")),
+                         menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer"), selected = T),
                          menuItem("KPIs", tabName = "kpis", icon = icon("line-chart")),
                          uiOutput("ui.fechas"),
                          # uiOutput("ui.rango"),  #por semana, mes
                          uiOutput("ui.fechas.filtros.super"),
                          menuItem("CLIENTES", tabName = "abc-clientes", icon = icon("industry")),
                          menuItem("VACANTES", tabName = "abc-vacantes", icon = icon("list")),
-                         menuItem("METAS", tabName = "abc-metas", icon = icon("trophy"), selected = T),
+                         menuItem("METAS", tabName = "abc-metas", icon = icon("trophy")),
                          menuItem("USUARIOS", tabName = "abc-users", icon = icon("users")),
                          menuItem("CATALOGOS", tabName = "catalogos", icon = icon("table")),
                          id = "Menu.super"

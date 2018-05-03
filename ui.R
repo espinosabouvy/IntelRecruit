@@ -27,7 +27,7 @@ library(stringi)  #install.packager('stringi')
 
 shinyUI(
 dashboardPage(skin = "blue",
-              dashboardHeader(title ="IntelRecruit v.2.0",titleWidth = 200),
+              dashboardHeader(title ="IntelRecruit v.3.0",titleWidth = 200),
               dashboardSidebar(width = 200,
                    sidebarMenuOutput("menu.login"),
                    sidebarMenuOutput("menu.reclut"),
