@@ -802,30 +802,34 @@ shinyServer(function(input, output, session) {
           tiempo <- kpi.tiempo%>%
                group_by(asesor, proceso)%>%
                summarise(dias = round(mean(fecha-fecha_vacante),1))
-               
+          
+          
           output$ui.tiempo.promedio <- renderValueBox({
-               valueBox(
-                    tiempo[tiempo$proceso=="Ingreso",]$dias ,"Dias proceso", 
+               valor <- tiempo[tiempo$proceso=="Ingreso",]$dias
+               if(nrow(tiempo)==0) valor = 0
+               valueBox(valor ,"Dias proceso", 
                     icon = icon("clock-o"),
                     color = "light-blue"
                )
-               
           })
           
           output$ui.dias.vacantes <- renderValueBox({
+               
                dias.vacantes <- kpi.tiempo%>%
                     filter(id_status==1)%>%
                     group_by(id_vacante)%>%
                     summarise("inicial" = min(fecha_vacante))%>%
                     mutate("dias.vacantes" = fecha.hoy-inicial)
-                    
-               valueBox(round(mean(dias.vacantes$dias.vacantes),1), "Dias abiertas",
+               
+               valor <- round(mean(dias.vacantes$dias.vacantes),1)
+               valueBox(valor, "Dias abiertas",
                              icon= icon("calendar"),
                              color = "orange"
                )
           })
           
           output$p.razones.rechazo <- renderPlot({
+               if(nrow(kpi.tiempo)==0)return(NULL)
                razones <- kpi.tiempo%>%
                     filter(id_proceso==5)%>%
                     group_by(razon_rechazo)%>%
@@ -845,7 +849,8 @@ shinyServer(function(input, output, session) {
                     theme(legend.position = "none", axis.text.y = element_blank(),
                           axis.text.x = element_blank())
           })
-
+          if(nrow(kpi.tiempo)==0)return(NULL)
+          
           ggplot(tiempo, aes(proceso, as.numeric(dias))) + 
                geom_bar(stat = 'identity', fill = "turquoise3") + 
                coord_flip() +
@@ -880,58 +885,80 @@ shinyServer(function(input, output, session) {
                                  date.inicio = fechas)
           
           output$ui.total.vacantes <- renderValueBox({
-               if(is.null(input$frecuencia)) return(NULL)
                valueBox(
                     nrow(consulta) , "Total",  icon = icon("list"),
                     width = 2, color = "light-blue"
                ) 
           })    
-
-          valueBox(
-               paste0(round(nrow(consulta[consulta$status=="Cerrada",])/nrow(consulta)*100,0),"%") , 
+          
+          valor <- paste0(round(nrow(consulta[consulta$status=="Cerrada",])/nrow(consulta)*100,0),"%")
+          if(nrow(consulta)==0) valor = "0%"
+          valueBox(value = valor, 
                "Cerradas",  icon = icon("thumbs-up"),
                width = 6, color = "light-blue"
           ) 
      }) 
 
-
+         #costo por medio
+     output$p.costo.por.medio <- renderPlot({
+          if(is.null(input$frecuencia)) return(NULL)
+          fechas <- tiempos(input$frecuencia)
+          
+          costo.x.medio <- q.costo.por.medio(id_usuario = id_user(), date.inicio = fechas) 
+          
+          if(nrow(costo.x.medio)==0)return(NULL)
+          
+          ggplot(costo.x.medio, aes(medio, costo,label = paste0(medio,"- $",costo)), group = 1) + 
+               geom_bar(stat = 'identity',fill = "turquoise3") + 
+               coord_flip() +
+               geom_text(size = 2.5, hjust = 'inward') + 
+               xlab("") + 
+               ylab("") +
+               theme(legend.position = "none", axis.text.y = element_blank(),
+                     axis.text.x = element_blank())
+          
+     })
      
+     #candidatos en proceso
+     output$p.en.proceso <- renderPlot({
+          seguimiento <- q.seguimiento(id_status = 1, id_usuario = id_user())
+          
+          p <- seguimiento%>%
+               group_by(id_candidato)%>%
+               mutate("ultimo_proceso" = max(orden_proceso))%>%
+               filter(orden_proceso== ultimo_proceso)%>%
+               group_by(orden_proceso, proceso)%>%
+               summarise("freq" = n())
+          p$proceso <- factor(p$proceso, unique((p%>%arrange((orden_proceso))%>%select(proceso))$proceso))
+          
+          if(nrow(p)==0)return(NULL)
+          
+          ggplot(p, aes(proceso, 1, label = paste(proceso, "\n", freq), fill = proceso)) + 
+               geom_bar(stat = "identity") + 
+               geom_text(size=5, vjust = 2) + 
+               theme_void() +
+               theme(legend.position = "none", axis.text.y = element_blank(),
+                     axis.text.x = element_blank(), 
+                     plot.background = element_blank())
+     })
+     
+     #embudo
      output$p.embudo <- renderPlot({
           if(is.null(input$frecuencia)) return(NULL)
           fechas <- tiempos(input$frecuencia)
-
           embudo <<- q.embudo(id_usuario = id_user(), date.inicio = fechas)   
-          
-          #solicitudes por vacante
-          output$ui.solicitudes.vacante <- renderValueBox({
-               valor <- ifelse(nrow(embudo)==0, 0,
-               round(length(unique(embudo$candidato))/length(unique(embudo$id_vacante)),2))
-               valueBox(valor, 
-                    "Solicitudes",  icon = icon("bullseye"),
-                    width = 2, color = "light-blue"
-               )
-               
-          })
-          
-          output$ui.costo.vacante <- renderValueBox({
-               if(is.null(input$frecuencia)) return(NULL)
-               gastado <- q.total.gastado(id_usuario = id_user(), date.inicio = fechas) 
-               cerradas <- nrow(embudo%>%
-                    filter(proceso == "Ingreso"))
-               
-               valueBox(round(gastado/cerradas,0), "Costo medio", icon = icon("usd"),
-                        width = 6, color = "red"
-               )
-          })
           
           #solicitudes por medios
           output$p.medios <- renderPlot({
+               if(nrow(embudo)==0) return(NULL)
+               if(is.null(input$frecuencia)) return(NULL)
+               
                p <- embudo%>%
                     filter(proceso %in% c("Solicitud","Ingreso"))%>%
                     group_by(proceso, medio)%>%
                     summarise("Candidatos" = n())
                #p$medio <- gsub(" ","\n",p$medio)
-          
+               
                ggplot(p, aes(medio, Candidatos, fill=proceso, label =Candidatos)) + 
                     geom_bar(stat = 'identity', position = 'dodge') +
                     xlab("") + 
@@ -944,46 +971,36 @@ shinyServer(function(input, output, session) {
                           axis.text.x = element_blank()) + 
                     coord_flip() + 
                     geom_text(size = 3, hjust = "inward")
-                         
+               
           })
           
-          #costo por medio
-          output$p.costo.por.medio <- renderPlot({
+          #solicitudes por vacante
+          output$ui.solicitudes.vacante <- renderValueBox({
                if(is.null(input$frecuencia)) return(NULL)
-               fechas <- tiempos(input$frecuencia)
                
-               costo.x.medio <- q.costo.por.medio(id_usuario = id_user(), date.inicio = fechas) 
+               valor <- ifelse(nrow(embudo)==0, 0,
+               round(length(unique(embudo$candidato))/length(unique(embudo$id_vacante)),1))
+               valueBox(valor, 
+                    "Solicitudes",  icon = icon("bullseye"),
+                    width = 2, color = "light-blue"
+               )
                
-               ggplot(costo.x.medio, aes(medio, costo,label = paste0(medio,"- $",costo)), group = 1) + 
-                    geom_bar(stat = 'identity',fill = "turquoise3") + 
-                    coord_flip() +
-                    geom_text(size = 2.5, hjust = 'inward') + 
-                    xlab("") + 
-                    ylab("") +
-                    theme(legend.position = "none", axis.text.y = element_blank(),
-                          axis.text.x = element_blank())
-                    
           })
           
-          output$p.en.proceso <- renderPlot({
-               seguimiento <- q.seguimiento(id_status = 1, id_usuario = id_user())
+          output$ui.costo.vacante <- renderValueBox({
+               if(is.null(input$frecuencia)) return(NULL)
                
-               p <- seguimiento%>%
-                    group_by(id_candidato)%>%
-                    mutate("ultimo_proceso" = max(orden_proceso))%>%
-                    filter(orden_proceso== ultimo_proceso)%>%
-                    group_by(orden_proceso, proceso)%>%
-                    summarise("freq" = n())
-               p$proceso <- factor(p$proceso, unique((p%>%arrange((orden_proceso))%>%select(proceso))$proceso))
+               gastado <- q.total.gastado(id_usuario = id_user(), date.inicio = fechas) 
+               cerradas <- nrow(embudo%>%
+                    filter(proceso == "Ingreso"))
                
-               ggplot(p, aes(proceso, 1, label = paste(proceso, "\n", freq), fill = proceso)) + 
-                    geom_bar(stat = "identity") + 
-                    geom_text(size=5, vjust = 2) + 
-                    theme_void() +
-                    theme(legend.position = "none", axis.text.y = element_blank(),
-                          axis.text.x = element_blank(), 
-                          plot.background = element_blank())
+               valueBox(round(gastado/cerradas,0), "Costo medio", icon = icon("usd"),
+                        width = 6, color = "red"
+               )
           })
+          
+          if(nrow(embudo)==0) return(NULL)
+          if(is.null(input$frecuencia)) return(NULL)
           
           pp <- embudo%>%
                filter(proceso != "Rechazo")%>%
@@ -1219,7 +1236,7 @@ shinyServer(function(input, output, session) {
           
           output$ui.ccliente <- renderUI({
                pickerInput("Cclientes","Clientes",
-       s                    choices = unique(vacantes$cliente),
+                           choices = unique(vacantes$cliente),
                            options = list('dropupAuto' = T, 'mobile'=T))
           })
      })
@@ -3032,12 +3049,12 @@ shinyServer(function(input, output, session) {
                     sidebarMenu(
                          uiOutput("ui.fechas"),
                          uiOutput("ui.fechas.filtros.super"),
-                         menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer")),
+                         menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer"), selected = T),
                          menuItem("KPIs", tabName = "kpis", icon = icon("line-chart")),
                          menuItem("CLIENTES", tabName = "abc-clientes", icon = icon("industry")),
                          menuItem("VACANTES", tabName = "abc-vacantes", icon = icon("list")),
                          menuItem("METAS", tabName = "abc-metas", icon = icon("trophy")),
-                         menuItem("USUARIOS", tabName = "abc-users", icon = icon("users"), selected = T),
+                         menuItem("USUARIOS", tabName = "abc-users", icon = icon("users")),
                          menuItem("CATALOGOS", tabName = "catalogos", icon = icon("table")),
                          id = "Menu.super"
                     )

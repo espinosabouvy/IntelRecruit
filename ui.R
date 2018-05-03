@@ -217,15 +217,15 @@ dashboardPage(skin = "blue",
                                 valueBoxOutput("ui.vacantes.abiertas",width = 2),
                                 valueBoxOutput("ui.dias.vacantes",width = 2)),
                                 box(title = "Dias de proceso",width = 4,
-                                    plotOutput("p.tiempos.proceso", height = 200)),
+                                    plotOutput("p.tiempos.proceso", height = 200)), #ok
                                 box(title = "Embudo",width = 4,
-                                    plotOutput("p.embudo", height = 200)),
+                                    plotOutput("p.embudo", height = 200)), #ok
                                 box(title = "Medios" ,width = 4,
-                                    plotOutput("p.medios", height = 200)),
+                                    plotOutput("p.medios", height = 200)), #ok
                                 box(title = "Razones de rechazo",width = 4,
-                                    plotOutput("p.razones.rechazo", height = 200)),
+                                    plotOutput("p.razones.rechazo", height = 200)),  #ok
                                 box(title = "Costo por medio",width = 4,
-                                    plotOutput("p.costo.por.medio", height = 200)),
+                                    plotOutput("p.costo.por.medio", height = 200)), #ok
                                     # h5("Total gastado", height=40)),
                                 box(title = "En proceso",width = 4,
                                     plotOutput("p.en.proceso", height = 100)),
