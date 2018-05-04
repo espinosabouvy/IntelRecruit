@@ -45,7 +45,6 @@ OR cand.baja = 1)
 AND vf.id_vacante = 257
 
 
-
 /*clientes + con vacantes   						q.clientes()*/
 SELECT clientes.*, IF(COUNT(vacantes_abiertas.id_cliente)>0,1,0) AS 'con_vacantes' 
 FROM clientes
