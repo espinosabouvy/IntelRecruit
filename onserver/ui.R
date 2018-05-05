@@ -12,7 +12,9 @@ library(ggplot2)
 library(plotly)
 library(shinyalert) #install.packages('shinyalert')
 library(tibble)
-#library(rhandsontable) #install.packager('rhandsontable)
+library(stringi)  #install.packager('stringi')
+# library(shinyjs)  #install.packages("shinyjs")
+# library(rhandsontable) #install.packager('rhandsontable)
 # library(ggmap) #distancia entre cps
 
 # #poner text input lado a lado
@@ -25,9 +27,10 @@ library(tibble)
 
 shinyUI(
 dashboardPage(skin = "blue",
-              dashboardHeader(title ="IntelRecruit",titleWidth = 200),
+              dashboardHeader(title ="IntelRecruit v.3.0",titleWidth = 200),
               dashboardSidebar(width = 200,
                    sidebarMenuOutput("menu.login"),
+                   sidebarMenuOutput("menu.reclut"),
                    sidebarMenuOutput("menu.logged")
                         ),
               dashboardBody(
@@ -43,18 +46,13 @@ dashboardPage(skin = "blue",
                                     splitLayout(cellWidths = c("50%","50%"),
                                                 pickerInput("Cproceso","Proceso","",
                                                             options = list('dropupAuto' = T, 'mobile'=T)),
-                                                dateInput("CFecha","Fecha",value = Sys.Date(),max = Sys.Date())),
+                                                dateInput("CFecha","Fecha",value = Sys.Date(),max = Sys.Date(),
+                                                          language = "es")),
                                     uiOutput("razon.rechazo"),
                                     actionBttn("cmd.guardar.proceso",  NULL, 
                                                style = "simple", color = "success", icon = icon("floppy-o"))
                                 ),
-                                box(title = 'DETALLE DE CANDIDATO', width = 8, collapsible = T,
-                                    htmlOutput("TDetalleCandidatos")),
-                                DT::dataTableOutput("tabla.seguimiento"),
-                                busyIndicator("Cargando registros...", wait = 1)
-                        ),
-                        tabItem("abc-candidatos",
-                                box(title = 'ABC CANDIDATOS', width = 12, collapsible = T,
+                                box(title = 'ABC CANDIDATOS', width = 8, collapsible = T, collapsed = T,
                                     splitLayout(cellWidths = c("0%","40%","60%"),
                                                 textInput("Tid", "ID"),
                                                 textInput("Tnombre", "Nombre"),
@@ -80,25 +78,26 @@ dashboardPage(skin = "blue",
                                     actionBttn("cmd.nuevo.candidato", NULL, style = "simple",color = "primary", icon = icon("plus")),
                                     actionBttn("cmd.guardar.candidato",  NULL, style = "simple", color = "success", icon = icon("floppy-o")),
                                     actionBttn("cmd.borrar.candidato",  NULL, style = "simple", color = 'danger', icon = icon("minus"))),
-                                DT::dataTableOutput("tabla.candidatos"),
-                                busyIndicator("Cargando informacion...", wait = 2)
-                                ),
+                                DT::dataTableOutput("tabla.seguimiento"),
+                                busyIndicator("Cargando registros...", wait = 1)
+                        ),
                         tabItem("abc-bolsa",
                                 box("VACANTES ABIERTAS",width = 9,
                                     DT::dataTableOutput("tabla.bolsa.vacantes")),
                                 box("ASIGNAR CANDIDATO A VACANTE", width = 3,
-                                    actionBttn("buscar.asignacion","Recomendar...", #mapdist("mexico, 37140","mexico, 37235", mode = 'walking', output = 'simple', override_limit = T)$m
-                                               icon = icon("puzzle-piece"), style = "bordered", color = "success" ),
-                                    htmlOutput("msg.asignacion"),
-                                    actionBttn("guardar.asignacion","Guardar asignacion",
-                                               style = "bordered", color = "danger")),
+                                    # actionBttn("buscar.asignacion","Recomendar", #mapdist("mexico, 37140","mexico, 37235", mode = 'walking', output = 'simple', override_limit = T)$m
+                                    #            style = "material-flat", color = "primary" ),
+                                    actionBttn("guardar.asignacion","Asignar",
+                                               style = "material-flat", color = "success"),
+                                    htmlOutput("msg.asignacion")
+                                    ),
                                 box("CANDIDATOS DISPONIBLES", width = 12,
                                     uiOutput("ui.ver.rechazados"),
                                     DT::dataTableOutput("tabla.bolsa.candidatos")),
                                 busyIndicator("Cargando informacion...", wait = 1)
                                 ),
                         tabItem("abc-gastos", 
-                                box("ABC gastos", width = 12, collapsible = T,
+                                box(title = "ABC gastos", width = 12, collapsible = T,
                                     splitLayout(cellWidths = c("0%", "40%","40%"),
                                          textInput("Gid", "ID"),       
                                          pickerInput("gastos.conceptos","Conceptos","", 
@@ -126,14 +125,70 @@ dashboardPage(skin = "blue",
                         tabItem("abc-users",
                                 DT::dataTableOutput("tabla.usuarios")),
                         tabItem("abc-clientes",
-                                checkboxInput("clientes.activos","Solo clientes con
-                                              vacantes activas", value = T),
+                                box(
+                                   id = "clientes.box", title = "ABC clientes", width = 12, collapsible = T,
+                                    splitLayout(cellWidths = c("0%","40%","55%"),
+                                                textInput("Ctid", "ID"),
+                                                textInput("Ctcliente","Cliente"),
+                                                textInput("Ctdireccion","Direccion")
+                                    ),
+                                    splitLayout(cellWidths = c("30%","30%"),
+                                                textInput("Cttelefono","Telefono"),
+                                                textInput("Ctcp","Codigo Postal")
+                                    ),
+                                    actionBttn("cmd.nuevo.cliente", NULL, style = "simple",color = "primary", icon = icon("plus")),
+                                    actionBttn("cmd.guardar.cliente",  NULL, style = "simple", color = "success", icon = icon("floppy-o")),
+                                    actionBttn("cmd.borrar.cliente",  NULL, style = "simple", color = 'danger', icon = icon("minus"))
+                                ),
+                                radioGroupButtons(inputId = "clientes.activos", label = "Filtrar", choices = c("Todos", "Con vacantes activas"), 
+                                                  status = "primary", selected = "Con vacantes activas",
+                                                  checkIcon = list(yes = icon("ok", lib = "glyphicon"), no = icon("remove",lib = "glyphicon"))),
                                 DT::dataTableOutput("tabla.clientes"),
                                 busyIndicator("Cargando clientes...", wait = 1)
                                 ),
+                        tabItem("solo-vacantes",
+                                p("Las vacantes solo pueden ser modificadas por un supervisor"),
+                                DT::dataTableOutput("tabla.vacantes.solo"),
+                                busyIndicator("Cargando vacantes...", wait = 1)
+                        ),
                         tabItem("abc-vacantes",
-                                h5("Las vacantes solo pueden ser creadas y modificadas por un supervisor"),
+                                box(id = "vacantes.box", title = "ABC vacantes", width = 12, collapsible = T,
+                                splitLayout(cellWidths = c("0%","30%","30%","15%","15%"),
+                                            textInput("Vid", "ID"),
+                                            pickerInput("Vcliente","Cliente","", 
+                                                        options = list('dropupAuto' = T, 'mobile'=T)),
+                                            pickerInput("Vvacante","Vacante","", 
+                                                        options = list('dropupAuto' = T, 'mobile'=T)),
+                                            pickerInput("Vreclut","Reclutador","", 
+                                                        options = list('dropupAuto' = T, 'mobile'=T)),
+                                            dateInput("Vfecha","Fecha",value = Sys.Date(),
+                                                      language = "es")
+                                            ),
+                                actionBttn("cmd.nuevo.vacante", NULL, style = "simple",color = "primary", icon = icon("plus")),
+                                actionBttn("cmd.guardar.vacante",  NULL, style = "simple", color = "success", icon = icon("floppy-o")),
+                                actionBttn("cmd.borrar.vacante",  NULL, style = "simple", color = 'danger', icon = icon("minus"))
+                                ),
+                                radioGroupButtons(inputId = "vacantes.cerradas", label = "Filtrar", choices = c("Todas", "Solo abiertas"), 
+                                                  status = "primary", selected = "Solo abiertas",
+                                                  checkIcon = list(yes = icon("ok", lib = "glyphicon"), no = icon("remove",lib = "glyphicon"))),
                                 DT::dataTableOutput("tabla.vacantes"),
+                                busyIndicator("Cargando vacantes...", wait = 1)
+                        ),
+                        tabItem("abc-metas",
+                                box(id = "metas.box", title = "ABC metas", width = 12, collapsible = T,
+                                    splitLayout(cellWidths = c("0%","40%","15%","15%"),
+                                                textInput("Mid", "ID"),
+                                                pickerInput("Mdescripcion","KPI","",
+                                                            options = list('dropupAuto' = T, 'mobile'=T)),
+                                                textInput("Mmeta","Meta",""),
+                                                dateInput("Mfecha","Fecha de inicio", value = Sys.Date(),
+                                                          language = "es")
+                                    ),
+                                    actionBttn("cmd.nuevo.meta", NULL, style = "simple",color = "primary", icon = icon("plus")),
+                                    actionBttn("cmd.guardar.meta",  NULL, style = "simple", color = "success", icon = icon("floppy-o")),
+                                    actionBttn("cmd.borrar.meta",  NULL, style = "simple", color = 'danger', icon = icon("minus"))
+                                ),
+                                dataTableOutput("tabla.metas"),
                                 busyIndicator("Cargando vacantes...", wait = 1)
                         ),
                         tabItem("score",
@@ -174,12 +229,15 @@ dashboardPage(skin = "blue",
                                 busyIndicator("Calculando indicadores...", wait = 1)
                       ),
                       tabItem("catalogos",
-                              box("Modificar catalogos",
-                              pickerInput("cb.catalogo", label = "Catalogo a modificar",
+                              box("",
+                                   pickerInput("cb.catalogo", label = "Catalogo a modificar",
                                           choices = "",
                                           multiple = F, options = list('dropupAuto' = T, 'mobile'=T,
                                                                       container=  'body')),
-                                  textInput("valor","Descripcion"),
+                                  
+                                  splitLayout(cellWidths = c("0%","100%"),
+                                        textInput("Cid","Id"),
+                                        textInput("valor","Descripcion")),
                                   actionBttn("cmd.nuevo.valor", NULL, style = "simple",color = "primary", icon = icon("plus")),
                                   actionBttn("cmd.guardar.valor",  NULL, style = "simple", color = "success", icon = icon("floppy-o")),
                                   actionBttn("cmd.borrar.valor",  NULL, style = "simple", color = 'danger', icon = icon("minus"))
