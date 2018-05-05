@@ -17,23 +17,23 @@ library(stringi)  #install.packager('stringi')
 # library(rhandsontable) #install.packager('rhandsontable)
 # library(ggmap) #distancia entre cps
 
-# #poner text input lado a lado
-# textInputRow<-function (inputId, label, value = "") 
-# {
-#      div(style="display:inline-block",
-#          tags$label(label, `for` = inputId), 
-#          tags$input(id = inputId, type = "text", value = value, class="input-small"))
-# }
-
 shinyUI(
 dashboardPage(skin = "blue",
-              dashboardHeader(title ="IntelRecruit v.3.0",titleWidth = 200),
+              dashboardHeader(title ="IntelRecruit v.3.1",titleWidth = 200),
               dashboardSidebar(width = 200,
                    sidebarMenuOutput("menu.login"),
                    sidebarMenuOutput("menu.reclut"),
                    sidebarMenuOutput("menu.logged")
                         ),
               dashboardBody(
+                    tags$header(HTML("<script async src='https://www.googletagmanager.com/gtag/js?id=UA-89791536-4'></script>
+                         <script>
+                         window.dataLayer = window.dataLayer || [];
+                         function gtag(){dataLayer.push(arguments);}
+                         gtag('js', new Date());
+                         
+                         gtag('config', 'UA-89791536-4');
+                         </script>")),     
                    fluidPage(
                              useShinyalert(),
                    tabItems(
