@@ -213,35 +213,40 @@ shinyServer(function(input, output, session) {
      
      q.vacantes <- function(id_status=c(1,2), id_usuario= id_user(), all=F, date.inicio= 20000101){
           con <- conectar()
-          query <- paste0("SELECT vacantes.id, clientes.`nombre` AS 'cliente', 
-                              vacantes_nombre.`nombre` AS 'vacante',
-                              COUNT(DISTINCT(vf.id_candidato)) AS 'candidatos',
-                              vacantes.fecha, vacantes_status.`nombre` AS 'status', users.`nombre` AS 'asesor',
-                              clientes.`codigo_postal`
+          query <- paste0("SELECT vacantes.id, clientes.`nombre` AS 'cliente', vacantes_nombre.`nombre` AS 'vacante',
+	                         IFNULL(vf.candidatos,0) candidatos, vacantes.fecha, vacantes_status.`nombre` AS 'status', 
+                              users.`nombre` AS 'asesor', clientes.`codigo_postal`
                           FROM vacantes
                           LEFT JOIN clientes ON clientes.id = vacantes.`id_cliente`
                           LEFT JOIN vacantes_nombre ON vacantes_nombre.id = vacantes.`id_nombre_vacante`
                           LEFT JOIN vacantes_status ON vacantes_status.id = vacantes.`id_status`
-                          LEFT JOIN (SELECT * 
-                              FROM vacantes_following
-                              WHERE vacantes_following.`id_candidato` NOT IN (  /*quitar estos candidatos*/
-                                   SELECT DISTINCT(vf.id_candidato)
-                                   FROM vacantes_following vf
-                                   LEFT JOIN candidatos cand ON cand.id = vf.id_candidato
-                                   WHERE ((vf.id_proceso = 5  AND vf.cambio_vacante=0)
-                                   OR cand.baja = 1))) 
-                          AS vf ON vf.id_vacante = vacantes.`id`
                           LEFT JOIN users ON users.id = vacantes.`id_usuario` 
-                          WHERE vacantes.`baja`= 0 
-                          AND vacantes.id_status IN (", paste(id_status,collapse = ",") 
-                              ,")
+                          LEFT JOIN (SELECT vf.id_vacante, COUNT(DISTINCT(vf.id_candidato)) 'candidatos'
+                              FROM vacantes_following vf 
+                              LEFT JOIN vacantes_procesos vp ON vp.id = vf.id_proceso
+                              LEFT JOIN candidatos can ON can.id = vf.id_candidato
+                              WHERE vf.cambio_vacante = 0
+                              AND vp.baja = 0 
+                              AND can.baja = 0  
+                              AND vf.id_candidato NOT IN ( 
+                                   SELECT DISTINCT(id_candidato) id_candidato
+                                   FROM vacantes_following vf
+                                   WHERE id_proceso IN (SELECT id 
+                                        FROM vacantes_procesos 
+                                        WHERE cierra_proceso=1)
+                                   AND cambio_vacante = 0)
+                              GROUP BY vf.id_vacante) 
+                          AS vf ON vf.id_vacante = vacantes.`id`
+                          WHERE vacantes.`baja`= 0  
+                          AND vacantes.id_status IN (", paste(id_status,collapse = ","),")
                           AND vacantes.fecha >= ", gsub("-","",ymd(date.inicio)))
           
           if (all == F){ #agrega filtros a la consulta
                query <- paste(query, " AND  vacantes.id_usuario= ", id_usuario)
           }
           
-          query <- paste0(query, " GROUP BY vacantes.`id`")
+          query <- paste0(query, " GROUP BY id
+                          ORDER BY cliente")
           
           consulta <- dbGetQuery(con, query)
           dbDisconnect(con)
@@ -543,6 +548,7 @@ shinyServer(function(input, output, session) {
                     level <<- logins$level
                     nombre <<- logins$nombre
                     id_user(logins$id)
+                    showNotification(paste("Bienvenido", nombre), type = "message",duration = 5)
                     cargar_menus()
                } else {
                     # sendSweetAlert(session, "Incorrecto","Usuario o contraseña incorrectos",
@@ -1128,7 +1134,6 @@ shinyServer(function(input, output, session) {
                           "No se ha seleccionado un proceso o fecha que registrar",
                           type = "error",animation = TRUE)
           } else {
-               
                if(id_proceso==4){ #si se cierra la vacante
                     msg <- "Esto cerrara la vacante y los otros candidatos asignados a esta vacante se asignaran a otra vacante \n
                     del mismo cliente y posicion si existiera o a la bolsa de candidatos \n
@@ -1165,8 +1170,10 @@ shinyServer(function(input, output, session) {
           comentarios <- "sin comentarios"
           
           if (id_proceso==5) {
-               id_razon_rechazo <- c_rechazo[c_rechazo$nombre== input$rechazo,]$id }
-          else {id_razon_rechazo <- 0 }
+               id_razon_rechazo <- c_rechazo[c_rechazo$nombre== input$rechazo,]$id
+          } else { 
+               id_razon_rechazo <- 0 
+          }
           
           #solo actualiza procreso
           qinsert <- paste0("INSERT INTO vacantes_following
@@ -1202,7 +1209,10 @@ shinyServer(function(input, output, session) {
           }
           
           dbDisconnect(con)
-          new.seguimiento(new.seguimiento()+1)  #actualiza tabla seguimiento
+          #actualiza tabla seguimiento
+          new.seguimiento(new.seguimiento()+1) 
+          #actualiza las vacantes, si el proceso regitrado cierra el proceso
+          if(c_procesos[c_procesos$nombre == proceso,]$cierra_proceso == 1) new.vacantes(new.vacantes()+1)
      }      
      
      #ABC CANDIDATOS ---------------------------------------------------------------------
@@ -1519,7 +1529,7 @@ shinyServer(function(input, output, session) {
           datos.asignacion <<- dbGetQuery(con, query)
           dbDisconnect(con)
           
-          if(nrow(datos.asignacion)>1) { #llevo varios procesos de reclutamiento
+          if(nrow(datos.asignacion%>%filter(cierra_proceso!=1))>1) { #llevo varios procesos de reclutamiento
                todos <- datos.asignacion[datos.asignacion$cierra_proceso==0,]$proceso
                
                nombre = unique(datos.asignacion[datos.asignacion$cierra_proceso== 0,]$nombre)
@@ -1530,12 +1540,15 @@ shinyServer(function(input, output, session) {
                                           nombre.ok = "ok.asignar",label.boton = "Asignar"), session)
                
           } else { 
-               fun.cambiar.vacante(reg.escribir = datos.asignacion, reg.marcar = datos.asignacion,
+               fun.cambiar.vacante(reg.escribir = datos.asignacion%>%filter(cierra_proceso!=1), 
+                                   reg.marcar = datos.asignacion,
                                    fecha.nueva = fecha.hoy, 
                                    vacante.nva = id.vac)
                #actualiza tablas
                new.vacantes(new.vacantes()+1)
                new.candidatos(new.candidatos()+1)
+               
+               showNotification("Candidato asignado correctamente", type = "message",duration = 10)
           }
           
 
@@ -2477,6 +2490,8 @@ shinyServer(function(input, output, session) {
      
      #ABC VACANTES ----------------------------------------------------------------------
      output$tabla.vacantes.solo <- DT::renderDataTable({
+          new.vacantes()
+          
           vacantes <- cargar.bolsa.vacantes(id_status = 1, id_usuario = id_user())
           
           datatable(data = vacantes,
