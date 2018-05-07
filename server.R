@@ -176,7 +176,11 @@ shinyServer(function(input, output, session) {
           return(gastos)
      }
           
-     q.kpi.tiempo.proceso <- function(id_status = c(1,2), id_usuario, date.inicio, all=F){
+     #incluye en los indicadores, procesos que cambiaron de vacante, pueden estar dobles,
+     #aparece que se hizo solicitud, aunque se reutilizo del proceso anterior y en 
+     #realidad no se volvio a hacer (se puede corregir, agregando columna - se reutilizo, pero
+     #no se realizara por el momento)
+     q.kpi.tiempo.proceso <- function(id_status = c(1,2), id_usuario, date.inicio = 20000101, all=F){
           con <- conectar()
           
           query <- paste0("SELECT va.asesor, va.id AS 'id_vacante', va.fecha_vacante, va.id_status,  vp.orden, 
@@ -209,6 +213,24 @@ shinyServer(function(input, output, session) {
           }
           return(consulta)
           
+     }
+     
+     q.score.vacantes <- function(date.inicio = 20000101){
+          con <- conectar()
+          query <- paste0("SELECT vacantes.id_cliente, clientes.nombre, users.nombre 'reclutador',
+	                     COUNT(vacantes.fecha) 'vacantes',
+                          IF(vacantes.id_status = 1, 'A','C') 'status', vacantes.id_status
+                          FROM vacantes
+                          LEFT JOIN clientes on clientes.id = vacantes.id_cliente
+                          LEFT JOIN users on users.id = vacantes.id_usuario
+                          WHERE vacantes.baja = 0
+               AND vacantes.fecha >= ", date.inicio, "
+               GROUP BY vacantes.id_cliente, vacantes.id_status, vacantes.id_usuario")
+          consulta <- dbGetQuery(con, query)
+          dbDisconnect(con)
+          
+          consulta$vacantes <- as.integer(consulta$vacantes)
+          return(consulta)
      }
      
      q.vacantes <- function(id_status=c(1,2), id_usuario= id_user(), all=F, date.inicio= 20000101){
@@ -254,6 +276,7 @@ shinyServer(function(input, output, session) {
           consulta$fecha <- ymd(consulta$fecha)
           return(consulta)
      }
+     
      
      #usuarios y sus vacantes abiertas
      q.usuarios <- function(id_status = c(1,2)){
@@ -320,7 +343,7 @@ shinyServer(function(input, output, session) {
      
      q.candidatos <- function(id_candidatos = NULL, mis.candidatos=F){
           con <- conectar()
-          query <- paste("SELECT candidatos.id, candidatos.nombre, cp, c_sexo.`nombre` AS 'sexo', 
+          query <- paste("SELECT candidatos.id, candidatos.nombre, telefono, celular, correo, cp, c_sexo.`nombre` AS 'sexo', 
                               c_escolaridad.`nombre`AS 'escolaridad', fecha_nacimiento, medios.`nombre` AS 'medio', 
                          direccion 
                          FROM candidatos
@@ -627,7 +650,7 @@ shinyServer(function(input, output, session) {
           
           
           datos <- kpi.tiempo%>%
-               filter(proceso %in% "Solicitud")%>%
+               filter(id_proceso == 1)%>%
                mutate("SEMANA" = paste(year(fecha),"-",week(fecha)))%>%
                group_by(asesor, id_vacante, SEMANA)%>%
                summarise("CANDIDATOS"= n())%>%
@@ -689,7 +712,7 @@ shinyServer(function(input, output, session) {
           dias.prom.vacante <- kpi.tiempo%>%
                filter(id_status ==2 & id_proceso==4)%>%  #cerradas y proceso de ingreso
                mutate("SEMANA" = paste(year(fecha_vacante),"-",week(fecha_vacante)),
-                      "INGRESO" = as_date(ifelse(proceso == "Ingreso", fecha, fecha.hoy)),
+                      "INGRESO" = as_date(ifelse(id_proceso == 4, fecha, fecha.hoy)),
                       "DIAS.ABIERTA" = INGRESO-fecha_vacante)%>%
                group_by(asesor, SEMANA, id_vacante)%>%
                summarise("DIAS.VACANTE" = min(DIAS.ABIERTA))%>%
@@ -752,7 +775,7 @@ shinyServer(function(input, output, session) {
                group_by(asesor, SEMANA)%>%
                summarise("VACANTES" = n_distinct(id_vacante))
           cerradas <- kpi.tiempo%>%
-               filter(proceso=="Ingreso")%>%
+               filter(id_proceso==4)%>%
                mutate("SEMANA" = paste(year(fecha_vacante),"-",week(fecha_vacante)))%>%
                group_by(asesor, SEMANA)%>%
                summarise("CERRADAS" = n_distinct(id_vacante))
@@ -784,6 +807,115 @@ shinyServer(function(input, output, session) {
      })
      #termina graficos de kpis--
           
+     #SCOREBOARD SUPERVISOR -------------------------------------------
+          output$ss.vacantes.cliente <- renderPlot({
+               new.vacantes()
+               
+               if(is.null(input$frecuencia)) return(NULL)
+               fechas <- tiempos(input$frecuencia)
+                    
+               vacantes <<- q.score.vacantes(date.inicio = fechas)
+               
+               #total vacantes
+               output$uis.total.vacantes <- renderValueBox({
+                    valueBox(value = sum(vacantes$vacantes),
+                             "Total",
+                             icon = icon('tasks'),
+                             color = "light-blue")
+               })
+               
+               #total abiertas
+               output$uis.vacantes.abiertas <- renderValueBox({
+                    valueBox(value = sum(vacantes[vacantes$id_status==1,]$vacantes),
+                             "Abiertas",
+                             icon = icon('thumbs-up'),
+                             color = "orange")
+               })
+               
+               #abiertas promedio
+               output$uis.abiertas.promedio <- renderValueBox({
+                    valor <- paste0(round(sum(vacantes[vacantes$id_status==1,]$vacantes)/nrow(unique(vacantes$reclutador))*100,0),"%")
+                    valueBox(value = valor ,
+                             "Abiertas",
+                             icon = icon('thumbs-up'),
+                             color = "orange")
+               })
+               
+               #% cerradas
+               output$uis.vacantes.cerradas <- renderValueBox({
+                    valueBox(value = paste(round(sum(vacantes[vacantes$id_status==2,]$vacantes)/sum(vacantes$vacantes)*100,0),"%"),
+                             "Cerradas",
+                             icon = icon('thumbs-up'),
+                             color = "light-blue")
+               })
+               
+               #vacantes por reclutador
+               output$ss.vacantes.reclut <- renderPlot({
+                    for.plot <- vacantes%>%
+                         group_by(reclutador, status)%>%
+                         summarise("vacantes" = sum(vacantes))%>%
+                         group_by(reclutador)%>%
+                         mutate("total" = sum(vacantes),
+                                "pct.cerradas" = as.integer(round(vacantes/total*100,0)))%>%
+                         mutate("pct.abiertas" = as.integer(100-pct.cerradas))
+                    
+                    for.plot$reclutador.ok <- gsub(" ","\n", for.plot$reclutador)
+                    
+                    ggplot(for.plot, aes(reorder(reclutador.ok, c(total)), vacantes, group = status, 
+                                         fill = status)) +  
+                         geom_col(position = "stack") + 
+                         geom_text(aes(label = paste0(status,": ",pct.cerradas,"%")), size = 3, hjust = 1, position = "stack")+
+                         xlab("") + 
+                         ylab("") + 
+                         theme(legend.position = "none", 
+                               legend.title = element_blank(),
+                               legend.text = element_text(size = 7),
+                               legend.key.size = unit(.3, 'cm'),
+                               axis.text.y = element_text(size = 7),
+                               axis.text.x = element_text(size = 7)) + 
+                         coord_flip()
+               })
+               
+               for.plot <- vacantes%>%
+                    group_by(id_cliente)%>%
+                    mutate("total" = sum(vacantes),
+                           "pct.cerradas" = as.integer(round(vacantes/total*100,0)))%>%
+                    mutate("pct.abiertas" = as.integer(100-pct.cerradas))
+               
+               ggplot(for.plot, aes(reorder(nombre, c(total)), vacantes, group = status, 
+                                    fill =status)) +  
+                    geom_col(position = "stack") + 
+                    geom_text(aes(label = paste0(status,": ",pct.cerradas,"%")), size = 3, hjust = 1, position = "stack")+
+                    xlab("") + 
+                    ylab("") + 
+                    theme(legend.position = "none", 
+                          legend.title = element_blank(),
+                          legend.text = element_text(size = 7),
+                          legend.key.size = unit(.3, 'cm'),
+                          axis.text.y = element_text(size = 7),
+                          axis.text.x = element_text(size = 7)) + 
+                    coord_flip()
+          })
+     output$uis.tiempo.promedio <- renderValueBox({
+          if(is.null(input$frecuencia)) return(NULL)
+          fechas <- tiempos(input$frecuencia)
+          
+          kpi.tiempo.score <- q.kpi.tiempo.proceso(date.inicio = fechas, all = T)  
+          
+          tiempo <- kpi.tiempo.score%>%
+               group_by(proceso)%>%
+               summarise(dias = round(mean(fecha-fecha_vacante),1))
+          
+          valor <- tiempo[tiempo$id_proceso==4,]$dias
+          if(nrow(tiempo)==0) valor = 0
+          valueBox(valor ,"Dias proceso", 
+                   icon = icon("clock-o"),
+                   color = "light-blue"
+          )
+     })
+     
+     #termina score supervisor --
+     
      #SCOREBOARD ------------------------------------------------------------------------------
      
      #grafico tiempos de proceso
@@ -806,12 +938,12 @@ shinyServer(function(input, output, session) {
                                               date.inicio = fechas)  
           
           tiempo <- kpi.tiempo%>%
-               group_by(asesor, proceso)%>%
+               group_by(asesor, id_proceso, proceso)%>%
                summarise(dias = round(mean(fecha-fecha_vacante),1))
           
           
           output$ui.tiempo.promedio <- renderValueBox({
-               valor <- tiempo[tiempo$proceso=="Ingreso",]$dias
+               valor <- tiempo[tiempo$id_proceso==4,]$dias
                if(nrow(tiempo)==0) valor = 0
                valueBox(valor ,"Dias proceso", 
                     icon = icon("clock-o"),
@@ -848,7 +980,7 @@ shinyServer(function(input, output, session) {
                ggplot(razones,aes(razon_rechazo, pct)) + 
                     geom_bar(aes(fill = factor(max)), stat = 'identity')  + 
                     coord_flip() +
-                    geom_text(aes(label = paste(" ",razon_rechazo,"-",pct,"% ")), hjust = "inward", size = 2.5, color = "black") +
+                    geom_text(aes(label = paste(" ",razon_rechazo,"-",pct,"% ")), hjust = "inward", size = 3, color = "black") +
                     #geom_text(aes(label = paste(pct,"%")), hjust = -0.05, size = 3, color = "black") +
                     ylab("") +
                     xlab("") +
@@ -905,7 +1037,7 @@ shinyServer(function(input, output, session) {
           ) 
      }) 
 
-         #costo por medio
+     #costo por medio
      output$p.costo.por.medio <- renderPlot({
           if(is.null(input$frecuencia)) return(NULL)
           fechas <- tiempos(input$frecuencia)
@@ -917,7 +1049,7 @@ shinyServer(function(input, output, session) {
           ggplot(costo.x.medio, aes(medio, costo,label = paste0(medio,"- $",costo)), group = 1) + 
                geom_bar(stat = 'identity',fill = "turquoise3") + 
                coord_flip() +
-               geom_text(size = 2.5, hjust = 'inward') + 
+               geom_text(size = 3, hjust = 'inward') + 
                xlab("") + 
                ylab("") +
                theme(legend.position = "none", axis.text.y = element_blank(),
@@ -960,8 +1092,8 @@ shinyServer(function(input, output, session) {
                if(is.null(input$frecuencia)) return(NULL)
                
                p <- embudo%>%
-                    filter(proceso %in% c("Solicitud","Ingreso"))%>%
-                    group_by(proceso, medio)%>%
+                    filter(as.integer(id_proceso) %in% c(1,4))%>%
+                    group_by(id_proceso, proceso, medio)%>%
                     summarise("Candidatos" = n())
                #p$medio <- gsub(" ","\n",p$medio)
                
@@ -976,7 +1108,7 @@ shinyServer(function(input, output, session) {
                           axis.text.y = element_text(size = 7),
                           axis.text.x = element_blank()) + 
                     coord_flip() + 
-                    geom_text(size = 3, hjust = "inward")
+                    geom_text(size = 4, hjust = "inward")
                
           })
           
@@ -998,7 +1130,7 @@ shinyServer(function(input, output, session) {
                
                gastado <- q.total.gastado(id_usuario = id_user(), date.inicio = fechas) 
                cerradas <- nrow(embudo%>%
-                    filter(proceso == "Ingreso"))
+                    filter(id_proceso == 4))
                
                valueBox(round(gastado/cerradas,0), "Costo medio", icon = icon("usd"),
                         width = 6, color = "red"
@@ -1009,7 +1141,7 @@ shinyServer(function(input, output, session) {
           if(is.null(input$frecuencia)) return(NULL)
           
           pp <- embudo%>%
-               filter(proceso != "Rechazo")%>%
+               filter(id_proceso != 5)%>%
                group_by(orden, proceso,sexo)%>%
                summarise("total" = n())%>%
                ungroup()%>%
@@ -1020,7 +1152,7 @@ shinyServer(function(input, output, session) {
           
           #embudo de reclutamiento
           ggplot(pp, aes(proceso, 
-                         ifelse(sexo=="femenino",-PCT,PCT), fill = sexo, group = sexo, 
+                         ifelse(sexo=="FEMENINO",-PCT,PCT), fill = sexo, group = sexo, 
                          label = total)) + 
                geom_bar(stat = 'identity')  + 
                coord_flip() + 
@@ -1106,6 +1238,9 @@ shinyServer(function(input, output, session) {
           updateTextInput(session, "Tid", value = id_cand)               
           updateTextInput(session, "Tnombre", value = consulta$nombre)
           updateTextInput(session, "Tdireccion", value = consulta$direccion)
+          updateTextInput(session, "Ttelefono", value = consulta$telefono)
+          updateTextInput(session, "Tcelular", value = consulta$celular)
+          updateTextInput(session, "Tcorreo", value = consulta$correo)
           updateTextInput(session, "Tcp", value = consulta$cp)
           updateDateInput(session, "Tnacimiento", value = ymd(consulta$fecha_nacimiento))
           updatePickerInput(session, "Cescolaridad", selected = consulta$escolaridad)
@@ -1222,6 +1357,9 @@ shinyServer(function(input, output, session) {
           updateTextInput(session, "Tid", value = "")
           updateTextInput(session, "Tnombre", placeholder = "Nombre del candidato", value = "")
           updateTextInput(session, "Tdireccion", placeholder = "Calle, No. Colonia, Ciudad, Estado, Pais", value = "")
+          updateTextInput(session, "Ttelefono", placeholder = "(lada) telefono", value = "")
+          updateTextInput(session, "Tcelular", placeholder = "(lada) telefono", value = "")
+          updateTextInput(session, "Tcorreo", placeholder = "correo electronico", value = "")
           updateTextInput(session, "Tcp", placeholder = "CP 5 digitos", value = "")
           updateDateInput(session, "Tnacimiento", value = fecha.hoy)
           
@@ -1298,7 +1436,7 @@ shinyServer(function(input, output, session) {
           msg <- ""
           if((fecha.hoy - input$Tnacimiento)/365 < 15) msg = "El candidato tiene menos de 15 años, favor de verificar"
           if(grepl("[^0-9]", input$Tcp) | nchar(input$Tcp)!=5) msg = "El codigo postal debe ser un numero de 5 digitos"
-          if(input$Tnombre =="" | input$Tdireccion=="") msg = "Todos los campos deben ser llenados para registrar un candidato"
+          if(input$Tnombre =="") msg = "El nombre del candidato es obligatorio"
           
           if(msg!=""){
                shinyalert("Error", msg,type = "error")
@@ -1350,12 +1488,21 @@ shinyServer(function(input, output, session) {
                
                #insertar candidato y crear proceso inicial con fecha de hoy
                qinsert <- paste0("INSERT INTO candidatos
-                                 (nombre, direccion, cp, fecha_nacimiento, id_sexo, id_escolaridad,
-                                 id_medio) ",
+                                 (nombre, direccion, 
+                                 telefono, celular, correo,
+                                 cp, fecha_nacimiento, id_sexo, 
+                                 id_escolaridad, id_medio) ",
                                  "VALUES ('",
-                                 nombre.candidato, "', '",toupper(input$Tdireccion), "', ", input$Tcp, ", ",
-                                 gsub("-","", ymd(input$Tnacimiento)), ", ", id_sexo, ", ",
-                                 id_escolaridad, ", ", id_medio, ")")
+                                 nombre.candidato, "', 
+                                 '",toupper(input$Tdireccion), "',
+                                 '",input$Ttelefono, "',
+                                 '",input$Tcelular, "',
+                                 '",input$Tcorreo, "',
+                                 ", input$Tcp, ", ",
+                                 gsub("-","", ymd(input$Tnacimiento)), ", 
+                                 ", id_sexo, ", ",
+                                 id_escolaridad, ", 
+                                 ", id_medio, ")")
                dbExecute(con,qinsert)
                
                #id de ultimo candidato agregado
@@ -1382,7 +1529,10 @@ shinyServer(function(input, output, session) {
           } else {  #actualizar registro
                qupdate <- paste0("UPDATE candidatos 
                                  SET nombre = '", input$Tnombre,
-                                 "' ,direccion = '" , input$Tdireccion,
+                                 "' ,direccion = '" , toupper(input$Tdireccion),
+                                 "', telefono = '" , input$Ttelefono,
+                                 "', celular = '" , input$Tcelular,
+                                 "', correo = '" , input$Tcorreo,
                                  "' ,cp = ", input$Tcp, 
                                  " ,fecha_nacimiento = ", gsub("-","", ymd(input$Tnacimiento)),
                                  " ,id_sexo = ", id_sexo,
@@ -2914,10 +3064,11 @@ shinyServer(function(input, output, session) {
                       inline = T)
      })
      
-     #fechas y frecuencias condicionales a menu de scorboards
+     #fechas y frecuencias condicionales a menu de scoreboards
      output$ui.fechas <- renderUI({
+          new.seguimiento()
           if (!is.null(input$Menu.reclut)) {
-               if (input$Menu.reclut %in% c('score',"kpis")){
+               if (input$Menu.reclut %in% c('score',"kpis","supervision")){
                     con <- conectar()
                     query <- paste("SELECT * FROM frecuencias WHERE baja = 0")
                     consulta <- dbGetQuery(con, query)
@@ -2931,7 +3082,7 @@ shinyServer(function(input, output, session) {
                } else { return(NULL) }
           } else {
                if (!is.null(input$Menu.super)) {
-                    if (input$Menu.super %in% c('score',"kpis")){
+                    if (input$Menu.super %in% c('score',"kpis","supervision")){
                          con <- conectar()
                          query <- paste("SELECT * FROM frecuencias WHERE baja = 0")
                          consulta <- dbGetQuery(con, query)
@@ -2975,7 +3126,8 @@ shinyServer(function(input, output, session) {
      
      #si es rechazo
      output$razon.rechazo <- renderUI({
-          if(input$Cproceso!="Rechazo") return(NULL)
+          if(input$Cproceso == "") return(NULL)
+          if(as.integer(c_procesos[c_procesos$nombre == input$Cproceso,]$id) != 5) return(NULL)
           
           con <- conectar()
           c_rechazo <<- dbGetQuery(con, "SELECT * FROM razones_rechazo WHERE baja = 0")
@@ -2998,11 +3150,11 @@ shinyServer(function(input, output, session) {
           
      })
      
-     output$ui.filtro.procesos <- renderUI({      
-          selectInput('filtro.proceso',"Filtrar procesos",
-                      multiple = T, choices = c_procesos$nombre,                                
-                      selected = c("Solicitud","Ingreso","Rechazo"))
-     })
+     # output$ui.filtro.procesos <- renderUI({      
+     #      selectInput('filtro.proceso',"Filtrar procesos",
+     #                  multiple = T, choices = c_procesos$nombre,                                
+     #                  selected = c("Solicitud","Ingreso","Rechazo"))
+     # })
      
      output$imagen.inicio <- renderImage({
           return(list(
@@ -3064,8 +3216,9 @@ shinyServer(function(input, output, session) {
                     sidebarMenu(
                          uiOutput("ui.fechas"),
                          uiOutput("ui.fechas.filtros.super"),
-                         menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer"), selected = T),
+                         menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer")),
                          menuItem("KPIs", tabName = "kpis", icon = icon("line-chart")),
+                         menuItem("SUPERVISION", tabName = "supervision", icon = icon("stethoscope"), selected = T),
                          menuItem("CLIENTES", tabName = "abc-clientes", icon = icon("industry")),
                          menuItem("VACANTES", tabName = "abc-vacantes", icon = icon("list")),
                          menuItem("METAS", tabName = "abc-metas", icon = icon("trophy")),
@@ -3096,7 +3249,6 @@ shinyServer(function(input, output, session) {
                     sidebarMenu(
                          menuItem("SEGUIMIENTO VACANTES", tabName = "abc-registro", icon = icon("bullseye"), selected = T),
                          menuSubItem("BOLSA DE CANDIDATOS", "abc-bolsa", icon = icon("archive")),
-                         #menuItem("CALENDARIO", tabName = "abc-calendario", icon = icon("calendar")),
                          menuItem("VACANTES", tabName = "solo-vacantes", icon = icon("list")),
                          menuItem("GASTOS", tabName = "abc-gastos", icon = icon("usd")),
                          menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer")),

@@ -1,4 +1,4 @@
-/*candidatos 				q.candidatos() */
+﻿/*candidatos 				q.candidatos() */
 SELECT candidatos.id, candidatos.nombre, cp, c_sexo.`nombre` AS 'sexo', c_escolaridad.`nombre`AS 'escolaridad', fecha_nacimiento, medios.`nombre` AS 'medio', direccion 
 FROM candidatos
 LEFT JOIN c_sexo ON candidatos.`id_sexo` = c_sexo.`id`
@@ -155,7 +155,7 @@ LEFT JOIN razones_rechazo rc ON rc.`id` = vf.id_razon_rechazo
 RIGHT JOIN 
 	(SELECT vacantes.id, vacantes.`baja`, clientes.`nombre`, vacantes_nombre.`nombre` AS 'vacante', fecha AS 'fecha_vacante', vacantes.`id_status` AS 'id_status', users.id AS 'id_usuario' ,
 	users.`user` AS 'asesor' 
-OM vacantes
+FROM vacantes
 	LEFT JOIN clientes ON clientes.id = vacantes.`id_cliente`
 	LEFT JOIN vacantes_nombre ON vacantes_nombre.id = vacantes.`id_nombre_vacante`
 	LEFT JOIN users ON users.id = vacantes.`id_usuario`
@@ -342,3 +342,15 @@ RIGHT JOIN (
 AS vp ON vp.id = vf.`id_proceso`
 LEFT JOIN candidatos cand ON cand.id = vf.`id_candidato`
 WHERE vf.cambio_vacante = 0ND vf.`id_candidato` IN (563)
+
+/*vacantes abiertas y cerradas por cliente         q.score.vacantes*/
+SELECT vacantes.id_cliente, clientes.nombre, users.nombre 'reclutador',
+	COUNT(vacantes.fecha) 'vacantes',
+	IF(vacantes.id_status = 1, 'A','C') 'status', vacantes.id_status
+FROM vacantes
+LEFT JOIN clientes on clientes.id = vacantes.id_cliente
+LEFT JOIN users on users.id = vacantes.id_usuario
+WHERE vacantes.baja = 0
+AND vacantes.fecha >= 20180101
+GROUP BY vacantes.id_cliente, vacantes.id_status, vacantes.id_usuario
+
