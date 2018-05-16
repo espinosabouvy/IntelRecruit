@@ -26,13 +26,13 @@ dashboardPage(skin = "blue",
                    sidebarMenuOutput("menu.logged")
                         ),
               dashboardBody(
-                    tags$header(HTML("<script async src='https://www.googletagmanager.com/gtag/js?id=UA-89791536-4'></script>
+                    tags$header(HTML("<script async src='https://www.googletagmanager.com/gtag/js?id=UA-89791536-5'></script>
                          <script>
                          window.dataLayer = window.dataLayer || [];
                          function gtag(){dataLayer.push(arguments);}
                          gtag('js', new Date());
                          
-                         gtag('config', 'UA-89791536-4');
+                         gtag('config', 'UA-89791536-5');
                          </script>")),     
                    fluidPage(
                              useShinyalert(),
@@ -46,8 +46,7 @@ dashboardPage(skin = "blue",
                                     splitLayout(cellWidths = c("50%","50%"),
                                                 pickerInput("Cproceso","Proceso","",
                                                             options = list('dropupAuto' = T, 'mobile'=T)),
-                                                dateInput("CFecha","Fecha",value = Sys.Date(),max = Sys.Date(),
-                                                          language = "es")),
+                                                uiOutput("ui.Cfecha")),
                                     uiOutput("razon.rechazo"),
                                     actionBttn("cmd.guardar.proceso",  NULL, 
                                                style = "simple", color = "success", icon = icon("floppy-o"))

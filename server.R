@@ -7,24 +7,19 @@ shinyServer(function(input, output, session) {
      #VARIABLES PRINCIPALES -----------------------------------------------------------
      #suponer fecha, para que sys.date() con haga ridiculas las graficas
      #cambiar a sys.date() para el programa, fuera del demo
-     demo = T
+     demo = F
      if(demo){
-          fecha.hoy <- ymd(20180222)  #registro follow 20180311
+          fecha.hoy <- ymd(20180222)
      } else {
           fecha.hoy = as_date(Sys.Date())
      }
      
-     # values <- reactiveValues(sessionId = NULL)
-     # values$sessionId <- as.integer(runif(1, 1, 100000))
-     # #cat(paste0("Session id: ", values$sessionId))
-     # session$onSessionEnded(function() {
-     #      observe(cat(paste0("Ended: ", values$sessionId)))
-     #      # #desconectar cuando se cierra la sesion
-     #      # dbDisconnect(con)
-     # })
-     
      #cargar cp
      cp <- read.csv("www/cp.csv")
+     
+     #colores del grafico
+     mis.colores <- c("yellowgreen", "dodgerblue3", "darkslategray4", "hotpink3", "orange" ,"turquoise4",
+                      "paleturquoise3", "#33A02C", "#E31A1C", "#FF7F00", "#6A3D9A" ,"#B15928")
      
      #main variables
      b.logged <- FALSE   #global status login
@@ -74,8 +69,8 @@ shinyServer(function(input, output, session) {
      #conexion la bd
      conectar <- function(){
           if(!exists("cp")) cp <<- read.csv("www/cp.csv")
-          contra <- 'M4gr0-demo'
-          usuario <- "demo"
+          contra <- 'M1-5up3r.b4r4'
+          usuario <- "usrBara"
           #conexion con la bd
           con <- tryCatch(
                {return(dbConnect(RMariaDB::MariaDB(), dbname = as.character(cp$BD),
@@ -526,8 +521,8 @@ shinyServer(function(input, output, session) {
      output$menu.login <- renderMenu({
           sidebarMenu(
                menuItem("Ingresar al sistema", tabName = "portada", icon = icon('sign-in'),selected = T),
-               textInput("s.usuario","Usuario:",placeholder = "User: reclut o super"),
-               passwordInput("s.contra", "Contraseña:",placeholder = "Pass: 1234"),
+               textInput("s.usuario","Usuario:"),
+               passwordInput("s.contra", "Contraseña:"),
                actionBttn(inputId = "b.login", label = "Entrar", 
                           style = "jelly", color = "primary")
           )
@@ -873,7 +868,8 @@ shinyServer(function(input, output, session) {
                                legend.key.size = unit(.3, 'cm'),
                                axis.text.y = element_text(size = 7),
                                axis.text.x = element_text(size = 7)) + 
-                         coord_flip()
+                         coord_flip() + 
+                         scale_fill_manual(values = mis.colores)
                })
                
                for.plot <- vacantes%>%
@@ -894,7 +890,8 @@ shinyServer(function(input, output, session) {
                           legend.key.size = unit(.3, 'cm'),
                           axis.text.y = element_text(size = 7),
                           axis.text.x = element_text(size = 7)) + 
-                    coord_flip()
+                    coord_flip() + 
+                    scale_fill_manual(values = mis.colores)
           })
      output$uis.tiempo.promedio <- renderValueBox({
           if(is.null(input$frecuencia)) return(NULL)
@@ -980,25 +977,32 @@ shinyServer(function(input, output, session) {
                ggplot(razones,aes(razon_rechazo, pct)) + 
                     geom_bar(aes(fill = factor(max)), stat = 'identity')  + 
                     coord_flip() +
-                    geom_text(aes(label = paste(" ",razon_rechazo,"-",pct,"% ")), hjust = "inward", size = 3, color = "black") +
-                    #geom_text(aes(label = paste(pct,"%")), hjust = -0.05, size = 3, color = "black") +
+                    geom_text(aes(label = paste(" ",razon_rechazo,"-",pct,"% ")), hjust = "inward", size = 3, color = "white") +
                     ylab("") +
                     xlab("") +
                     theme(legend.position = "none", axis.text.y = element_blank(),
-                          axis.text.x = element_blank())
+                          axis.text.x = element_blank(),
+                          panel.background = element_rect(fill = 'black', colour = 'white'),
+                          panel.grid = element_blank(),
+                          axis.ticks = element_blank()) + 
+                    scale_fill_manual(values = mis.colores)
           })
           if(nrow(kpi.tiempo)==0)return(NULL)
           
-          ggplot(tiempo, aes(proceso, as.numeric(dias))) + 
-               geom_bar(stat = 'identity', fill = "turquoise3") + 
+          ggplot(tiempo, aes(proceso, as.numeric(dias), fill = proceso)) + 
+               geom_bar(stat = 'identity') + 
                coord_flip() +
-               #geom_text(aes(label = as.numeric(dias)), vjust = -0.05, size = 3, color = "black") +
                geom_text(aes(label = paste("",proceso,"-",as.numeric(dias),"")), hjust = "inward", size = 4, 
-                         color = "black",
+                         color = "white",
                          check_overlap = T) +
                xlab("") + 
                ylab("") +
-               theme(axis.text.x = element_blank(), axis.text.y = element_blank())
+               theme(legend.position = "none", axis.text.y = element_blank(),
+                     axis.text.x = element_blank(),
+                     panel.background = element_rect(fill = 'black', colour = 'white'),
+                     panel.grid = element_blank(),
+                     axis.ticks = element_blank()) + 
+               scale_fill_manual(values = mis.colores)
      })
      
      output$ui.vacantes.abiertas <- renderValueBox({
@@ -1047,13 +1051,17 @@ shinyServer(function(input, output, session) {
           if(nrow(costo.x.medio)==0)return(NULL)
           
           ggplot(costo.x.medio, aes(medio, costo,label = paste0(medio,"- $",costo)), group = 1) + 
-               geom_bar(stat = 'identity',fill = "turquoise3") + 
+               geom_bar(stat = 'identity') + 
                coord_flip() +
-               geom_text(size = 3, hjust = 'inward') + 
+               geom_text(size = 3, hjust = 'inward', colour = "white") + 
                xlab("") + 
                ylab("") +
                theme(legend.position = "none", axis.text.y = element_blank(),
-                     axis.text.x = element_blank())
+                     axis.text.x = element_blank(),
+                     panel.background = element_rect(fill = 'black', colour = 'white'),
+                     panel.grid = element_blank(),
+                     axis.ticks = element_blank()) + 
+               scale_fill_manual(values = mis.colores)
           
      })
      
@@ -1066,18 +1074,22 @@ shinyServer(function(input, output, session) {
                mutate("ultimo_proceso" = max(orden_proceso))%>%
                filter(orden_proceso== ultimo_proceso)%>%
                group_by(orden_proceso, proceso)%>%
-               summarise("freq" = n())
-          p$proceso <- factor(p$proceso, unique((p%>%arrange((orden_proceso))%>%select(proceso))$proceso))
+               summarise("freq" = n())%>%
+               merge(c_procesos%>%filter(cierra_proceso==0)%>%select("proceso"= nombre, orden), by ="proceso", all.y = T)%>%
+               mutate("candidatos" = ifelse(is.na(freq),0,freq))
+          
+          p$proceso <- factor(p$proceso, unique((p%>%arrange((orden))%>%select(proceso))$proceso))
           
           if(nrow(p)==0)return(NULL)
           
-          ggplot(p, aes(proceso, 1, label = paste(proceso, "\n", freq), fill = proceso)) + 
+          ggplot(p, aes(proceso, 1, label = paste(proceso, "\n", candidatos), fill = proceso)) + 
                geom_bar(stat = "identity") + 
                geom_text(size=5, vjust = 2) + 
                theme_void() +
                theme(legend.position = "none", axis.text.y = element_blank(),
                      axis.text.x = element_blank(), 
-                     plot.background = element_blank())
+                     plot.background = element_blank()) + 
+               scale_fill_manual(values = mis.colores)
      })
      
      #embudo
@@ -1097,19 +1109,25 @@ shinyServer(function(input, output, session) {
                     summarise("Candidatos" = n())
                #p$medio <- gsub(" ","\n",p$medio)
                
+               #spread y gather para agregar ceros si no ha realizado ese proceso
+               
+               
                ggplot(p, aes(medio, Candidatos, fill=proceso, label =Candidatos)) + 
                     geom_bar(stat = 'identity', position = 'dodge') +
                     xlab("") + 
                     ylab("") + 
+                    coord_flip() + 
+                    geom_text(size = 4, hjust = "inward", colour = "white") + 
                     theme(legend.position = "top", 
                           legend.title = element_blank(),
                           legend.text = element_text(size = 7),
                           legend.key.size = unit(.3, 'cm'),
                           axis.text.y = element_text(size = 7),
-                          axis.text.x = element_blank()) + 
-                    coord_flip() + 
-                    geom_text(size = 4, hjust = "inward")
-               
+                          axis.text.x = element_blank(),
+                          panel.background = element_rect(fill = 'black', colour = 'black'),
+                          panel.grid = element_blank(),
+                          axis.ticks = element_blank()) + 
+                    scale_fill_manual(values = mis.colores)
           })
           
           #solicitudes por vacante
@@ -1161,7 +1179,8 @@ shinyServer(function(input, output, session) {
                geom_label(size = 3) + 
                ylab("") +
                xlab("") +
-               theme(legend.position = 'top', axis.text.x = element_blank())
+               theme(legend.position = 'top', axis.text.x = element_blank()) + 
+               scale_fill_manual(values = mis.colores)
      })
      #termina kpi y scoreboard ---
           
@@ -1174,13 +1193,16 @@ shinyServer(function(input, output, session) {
           seguimiento <<- q.seguimiento(id_status = c(1), id_usuario = id_user(), all = F)%>%
                mutate_if(is.character, as.factor)
           
+          if(nrow(seguimiento)==0) return(NULL)
           #formatear
+          
           datos <- seguimiento%>%
                mutate("proceso" = paste0(orden_proceso,".",proceso))%>%
                select(id_candidato, candidato, cliente, id_vacante, vacante, proceso, fecha)%>%
                spread(proceso, fecha)%>%
                arrange(cliente, vacante, candidato)%>%
                tibble::column_to_rownames("id_candidato")
+          
           return(datos)
           
      }
@@ -1189,7 +1211,7 @@ shinyServer(function(input, output, session) {
           new.seguimiento()
           tabla.de.seguimiento <<- cargar.seguimiento()
           
-          if(nrow(tabla.de.seguimiento)==0)return(NULL)
+          if(is.null(tabla.de.seguimiento)) return(NULL)
           
           tabla.print <- tabla.de.seguimiento%>%
                select(everything(), -id_vacante)
@@ -1215,21 +1237,29 @@ shinyServer(function(input, output, session) {
           
           ren <- input$tabla.seguimiento_rows_selected
           id_vacante <- tabla.de.seguimiento[ren,]$id_vacante
-
+          id_cand <- row.names(tabla.de.seguimiento[ren,])
+          
+          #solo permite fechas posteriores al anterior y al dia de hoy
+          output$ui.Cfecha <- renderUI({
+               dateInput("CFecha","Fecha",value = Sys.Date(),
+                         min =  max(seguimiento[seguimiento$id_candidato==id_cand,]$fecha),
+                         max = Sys.Date(),
+                         language = "es")
+          })
+          
           output$ultimo.proceso <- renderText({
                orden.ultimo.proceso <- max(seguimiento[seguimiento$id_candidato==id_cand,]$orden_proceso)
                
                #solo permite procesos más adelantados
                updatePickerInput(session, "Cproceso", 
                                  choices = c_procesos[c_procesos$orden>orden.ultimo.proceso,]$nombre)
-               
+
                paste("Ultimo proceso:",
                      seguimiento[seguimiento$id_candidato==id_cand & 
                                       seguimiento$orden_proceso== orden.ultimo.proceso,]$proceso
                )
           })
-          
-          id_cand <- row.names(tabla.de.seguimiento[ren,])
+
           con <- conectar()
           consulta <- q.candidatos(id_candidatos = id_cand, mis.candidatos = T)
           dbDisconnect(con)
@@ -2809,12 +2839,12 @@ shinyServer(function(input, output, session) {
                qinsert <- paste0("INSERT INTO vacantes
                                  (id_cliente, id_nombre_vacante, fecha, id_status, id_usuario, baja) ",
                                  "VALUES (", id_cliente, "," ,id_vacante ,
-                                 ",", fecha, ",1 ,", id_reclut,  "0)")
+                                 ",", fecha, ",1 ,", id_reclut,  ", 0)")
                dbExecute(con, qinsert)
           } else {
                qupdate <- paste0("UPDATE vacantes
                                  SET id_cliente = ", id_cliente , 
-                                 ", id_nombre_vacante ) " , id_vacante,
+                                 ", id_nombre_vacante = " , id_vacante,
                                  ", fecha = " , fecha ,
                                  ", id_usuario = ", id_reclut ,
                                  " WHERE id = " , id)
@@ -2825,7 +2855,7 @@ shinyServer(function(input, output, session) {
           #insertar candidato y crear proceso inicial con fecha de hoy
 
           dbDisconnect(con)
-          new.gastos(new.gastos()+1)
+          new.vacantes(new.vacantes()+1)
      }
      #terminar abc vacantes ---
      
@@ -3019,8 +3049,8 @@ shinyServer(function(input, output, session) {
           output$menu.login <- renderMenu({
                sidebarMenu(
                     menuItem("Ingresar al sistema", tabName = "portada", icon = icon('sign-in'),selected = T),
-                    textInput("s.usuario","Usuario:",placeholder = "User: reclut o super"),
-                    passwordInput("s.contra", "Contraseña:",placeholder = "Pass: 1234"),
+                    textInput("s.usuario","Usuario:"),
+                    passwordInput("s.contra", "Contraseña:"),
                     actionBttn(inputId = "b.login", label = "Entrar", 
                                style = "jelly", color = "primary")
                )
@@ -3179,7 +3209,7 @@ shinyServer(function(input, output, session) {
           c_concepto.gastos <<- dbGetQuery(con, "SELECT *  FROM gastos_conceptos WHERE baja = 0")
           c_catalogos <<- dbGetQuery(con, "SELECT * FROM catalogos")
           c_reclutadores <<- dbGetQuery(con, "SELECT * FROM users WHERE level = 'reclutador' AND baja = 0")
-          c_clientes <<- q.clientes()
+          c_clientes <<- q.clientes(solo.activos = F)
           c_vacantes <<- dbGetQuery(con, "SELECT * FROM vacantes_nombre WHERE baja = 0")
           dbDisconnect(con) 
           
@@ -3218,7 +3248,7 @@ shinyServer(function(input, output, session) {
                          uiOutput("ui.fechas.filtros.super"),
                          menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer")),
                          menuItem("KPIs", tabName = "kpis", icon = icon("line-chart")),
-                         menuItem("SUPERVISION", tabName = "supervision", icon = icon("stethoscope"), selected = T),
+                         #menuItem("SUPERVISION", tabName = "supervision", icon = icon("stethoscope"), selected = T),
                          menuItem("CLIENTES", tabName = "abc-clientes", icon = icon("industry")),
                          menuItem("VACANTES", tabName = "abc-vacantes", icon = icon("list")),
                          menuItem("METAS", tabName = "abc-metas", icon = icon("trophy")),
