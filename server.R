@@ -7,7 +7,7 @@ shinyServer(function(input, output, session) {
      #VARIABLES PRINCIPALES -----------------------------------------------------------
      #suponer fecha, para que sys.date() con haga ridiculas las graficas
      #cambiar a sys.date() para el programa, fuera del demo
-     demo = F
+     demo = T
      if(demo){
           fecha.hoy <- ymd(20180222)
      } else {
@@ -69,6 +69,8 @@ shinyServer(function(input, output, session) {
      #conexion la bd
      conectar <- function(){
           if(!exists("cp")) cp <<- read.csv("www/cp.csv")
+          # contra <- 'M1-5up3r.b4r4'
+          # usuario <- "usrBara"
           contra <- 'M1-5up3r.b4r4'
           usuario <- "usrBara"
           #conexion con la bd
