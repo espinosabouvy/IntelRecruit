@@ -71,8 +71,8 @@ shinyServer(function(input, output, session) {
           if(!exists("cp")) cp <<- read.csv("www/cp.csv")
           # contra <- 'M1-5up3r.b4r4'
           # usuario <- "usrBara"
-          contra <- 'M1-5up3r.b4r4'
-          usuario <- "usrBara"
+          contra <- 'M4gr0-demo'
+          usuario <- "demo"
           #conexion con la bd
           con <- tryCatch(
                {return(dbConnect(RMariaDB::MariaDB(), dbname = as.character(cp$BD),
@@ -523,8 +523,8 @@ shinyServer(function(input, output, session) {
      output$menu.login <- renderMenu({
           sidebarMenu(
                menuItem("Ingresar al sistema", tabName = "portada", icon = icon('sign-in'),selected = T),
-               textInput("s.usuario","Usuario:"),
-               passwordInput("s.contra", "Contraseña:"),
+               textInput("s.usuario","Usuario:", placeholder = "User: reclut o super"),
+               passwordInput("s.contra", "Contraseña:", placeholder = "Pass: 1234"),
                actionBttn(inputId = "b.login", label = "Entrar", 
                           style = "jelly", color = "primary")
           )
@@ -935,7 +935,7 @@ shinyServer(function(input, output, session) {
           
           kpi.tiempo <<- q.kpi.tiempo.proceso(id_usuario = id_user(), 
                                               date.inicio = fechas)  
-          
+
           tiempo <- kpi.tiempo%>%
                group_by(asesor, id_proceso, proceso)%>%
                summarise(dias = round(mean(fecha-fecha_vacante),1))
@@ -1052,7 +1052,7 @@ shinyServer(function(input, output, session) {
           
           if(nrow(costo.x.medio)==0)return(NULL)
           
-          ggplot(costo.x.medio, aes(medio, costo,label = paste0(medio,"- $",costo)), group = 1) + 
+          ggplot(costo.x.medio, aes(medio, costo,label = paste0(medio,"- $",costo), fill = medio), group = 1) + 
                geom_bar(stat = 'identity') + 
                coord_flip() +
                geom_text(size = 3, hjust = 'inward', colour = "white") + 
@@ -1177,11 +1177,19 @@ shinyServer(function(input, output, session) {
                geom_bar(stat = 'identity')  + 
                coord_flip() + 
                scale_y_continuous(limits = max(pp$PCT) * c(-1,1)) + 
-               geom_line(lwd = 1, col = 'black') +
+               geom_line(lwd = 1, col = 'white') +
                geom_label(size = 3) + 
                ylab("") +
                xlab("") +
-               theme(legend.position = 'top', axis.text.x = element_blank()) + 
+               theme(legend.position = "top", 
+                     legend.title = element_blank(),
+                     legend.text = element_text(size = 7),
+                     legend.key.size = unit(.3, 'cm'),
+                     axis.text.y = element_text(size = 7),
+                     axis.text.x = element_blank(),
+                     panel.background = element_rect(fill = 'black', colour = 'black'),
+                     panel.grid = element_blank(),
+                     axis.ticks = element_blank()) + 
                scale_fill_manual(values = mis.colores)
      })
      #termina kpi y scoreboard ---
