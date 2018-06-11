@@ -1,0 +1,132 @@
+---
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(RMariaDB) #install.packages("RMariaDB")   ok
+library(lubridate)
+library(kableExtra)  #install.packages("kableExtra")
+library(dplyr)
+
+#conexion la bd
+     conectar <- function(){
+          if(!exists("cp")) cp <<- read.csv("www/cp.csv")
+          # contra <- 'M1-5up3r.b4r4'
+          # usuario <- "usrBara"
+          # contra <- 'M4gr0-demo'
+          # usuario <- "demo"
+          contra <- ''
+          usuario <- "root"
+          #conexion con la bd
+          con <- tryCatch(
+               {return(dbConnect(RMariaDB::MariaDB(), dbname = as.character(cp$BD),
+                                 username = usuario, password = contra, host = as.character(cp$host),
+                                 port = cp$port))
+               },
+               error = function(mensaje){
+                    cat(paste("No se pudo conectar al server", mensaje))
+                    sendSweetAlert(session, "Error conexion","No fue posible conectarse al servidor\n
+                                   Intenta nuevamente")
+                    return(NA)
+               }
+          )
+     }
+     
+```
+
+```{r consulta, echo=FALSE}
+          
+          con <- conectar()
+          query <- "SELECT candidatos.id, candidatos.nombre, telefono, celular, correo, cp, 
+                         c_sexo.`nombre` AS 'sexo', 
+                              c_escolaridad.`nombre`AS 'escolaridad', fecha_nacimiento, medios.`nombre` AS 'medio', 
+                         direccion, candidatos.*
+                         FROM candidatos
+                         LEFT JOIN c_sexo ON candidatos.`id_sexo` = c_sexo.`id`
+                         LEFT JOIN c_escolaridad ON candidatos.`id_escolaridad` = c_escolaridad.`id`
+                         LEFT JOIN medios ON medios.`id` = candidatos.`id_medio`
+                         WHERE candidatos.`baja`=0 
+                         AND candidatos.`id` = (SELECT id_candidato FROM candidato_detalle) "
+          c <- dbGetQuery(con, query)
+          
+          query <- "SELECT nombre,domicilio,telefono,edad 
+                    FROM cand_hijos 
+                    WHERE id_candidato = (SELECT id_candidato FROM candidato_detalle) "
+          h <- dbGetQuery(con, query)
+          
+          query <- "SELECT tipo, concepto, cantidad 
+                    FROM cand_io
+                    WHERE id_candidato = (SELECT id_candidato FROM candidato_detalle) "
+          io <- dbGetQuery(con, query)
+          dbDisconnect(con)
+
+
+```
+
+# `r c$nombre`  
+
+###Datos generales
+
+**Nombre:** `r c$nombre`  
+**Direccion:** `r c$direccion`  CP: `r c$cp`  
+**Teléfono:** `r c$telefono`  **Celular:** `r c$celular`  
+**Correo:** `r c$correo`  
+**Sexo:** `r c$sexo`         **Fecha de nacimiento:** `r ymd(c$fecha_nacimiento)` 
+**Estado civil:** `r c$estado_civil`  
+**Numero IMSS:** `r c$no_imss`  **RFC:** `r c$rfc`  
+**Medio de reclutamiento:** `r c$medio`  
+**Etiquetas:** `r c$hashtags`  
+
+###Estudios  
+Nivel de estudios  |   Titulo         | Institucion         | Periodo
+-------------------|---------------| --------------------|---------
+**Maestria**       |`r c$maestria` | `r c$maestria_inst` | `r c$maestria_periodo`
+**Licenciatura**   |`r c$licenciatura` | `r c$licenciatura_inst` | `r c$licenciatura_periodo`
+**Bachillerato**   |`r c$bachiller` | `r c$bachiller_inst` | `r c$bachiller_periodo`
+**Secundaria**     |`r c$secundaria` | `r c$secundaria_inst` | `r c$secundaria_periodo`
+
+####Otros estudios
+`r c$otros_estudios`  
+
+###Familia  
+.                   |   Nombre      | Domicilio             | Teléfono
+-------------------|---------------|-----------------------|-----------------------  
+**Padre**          |`r c$padre`    | `r c$padre_domicilio` | `r c$padre_telefono`
+**Madre**          |`r c$madre`    | `r c$madre_domicilio` | `r c$madre_telefono`
+**Esposa**         |`r c$esposa`   | `r c$esposa_domicilio`| `r c$esposa_telefono`
+
+**Hijos**
+`r h%>%kable()%>%kable_styling()`
+
+|Observaciones familiares|
+|--------------------|
+|`r c$obs_familiares`|  
+
+
+###Socioeconomico
+
+**Vivienda:** `r c$vivienda`  
+**Status economico:** `r c$status`  
+**Nivel de vivienda:** `r c$nivel_vivienda`    
+**Servicios con los que cuenta:** `r c$servicios`  
+**Areas disponibles en la vivienda:** `r c$distribucion`  
+**Espacio:** `r c$espacio`  
+**Condiciones del inmueble:** `r c$condiciones`  
+**Orden y limpieza:** `r c$limpieza`  
+**Calidad del mobiliario:** `r c$calidad_mobiliario`  
+**Estado de conservacion del mobiliario:** `r c$edo_conservacion`  
+**Años de vivir en el domicilio:** `r c$tiempo_domicilio`  
+**Tiempo de radicar en la ciudad:** `r c$espacio`  
+
+|Observaciones de vivienda|
+|--------------------|
+|`r c$obs_vivienda`|  
+
+**Ingresos**   
+`r kable(list(io%>%filter(tipo ==0)%>%select()))%>%kable_styling()`  
+
+
+
+

@@ -14,7 +14,9 @@ library(shinyalert) #install.packages('shinyalert')
 library(tibble)
 library(stringi)  #install.packager('stringi')
 # library(shinyjs)  #install.packages("shinyjs")
-# library(rhandsontable) #install.packager('rhandsontable)
+library(rhandsontable) #install.packager('rhandsontable)
+library(knitr)  #install.packager('rhandsontable)
+library(shinyBS)
 # library(ggmap) #distancia entre cps
 
 shinyUI(
@@ -39,50 +41,213 @@ dashboardPage(skin = "blue",
                    tabItems(
                         tabItem("portada",
                                 imageOutput("imagen.inicio",width = "600px")),
-                        tabItem("abc-registro",
+                        tabItem("abc-candidatos",
+                                tabBox(title = 'ABC CANDIDATOS', width = 12,
+                                       tabPanel("GENERALES",
+                                           splitLayout(cellWidths = c("0%","30%","30%","15%","23%"),
+                                                       textInput("Tid", "ID"),
+                                                       textInput("Tnombre", "Nombre"),
+                                                       textInput("Tdireccion","Direccion"),
+                                                       textInput("Tcp", "CP", placeholder = "CP de 5 digitos"),
+                                                       dateInput("Tnacimiento","Nacimiento",startview = "decade",
+                                                                 language = "es")
+                                           ),
+                                           splitLayout(cellWidths = c("18%","18%","15%","15%","32%"),
+                                                       pickerInput("Csexo","Sexo","", 
+                                                                   options = list('dropupAuto' = T, 'mobile'=T,
+                                                                                  container=  'body')),
+                                                       pickerInput("Cedocivil","Estado Civil",c("SOLTERO","CASADO/UNION LIBRE","DIVORCIADO","VIUDO"),
+                                                                   options = list('dropupAuto' = T, 'mobile'=T,
+                                                                                  container=  'body')),
+                                                       textInput("Ttelefono", "Telefono"),
+                                                       textInput("Tcelular", "Celular"),
+                                                       textInput("Tcorreo","Correo")
+                                           ),
+                                           splitLayout(cellWidths = c("18%","18%","14%","24%","24%"),
+                                                       pickerInput("Cescolaridad","Maxima escolaridad","",
+                                                                   options = list('dropupAuto' = T, 'mobile'=T,
+                                                                                  container=  'body')),
+                                                       textInput("Timss","No IMSS"),
+                                                       pickerInput("Cmedio","Adquisicion","",
+                                                                   options = list('dropupAuto' = T, 'mobile'=T,
+                                                                                  container=  'body')),
+                                                       uiOutput("ui.cvacantes"),
+                                                       uiOutput("ui.ccliente")
+                                           ),
+                                           textAreaInput("hashtags","Etiquetas clave",rows = 2, width = "600px",
+                                                         placeholder = "Etiquetas de caracteristicas del candidato que permitan encontrarlo en una busqueda. \nSepara cada etiqueta con un #"),
+                                           actionBttn("cmd.nuevo.candidato", NULL, style = "simple",color = "primary", icon = icon("plus")),
+                                           actionBttn("cmd.guardar.candidato",  NULL, style = "simple", color = "success", icon = icon("floppy-o")),
+                                           actionBttn("cmd.borrar.candidato",  NULL, style = "simple", color = 'danger', icon = icon("minus")),
+                                           actionBttn("grafica", NULL, style = "simple", color = 'success', icon = icon("minus")),
+                                           bsModal("modalExample", "Your plot", "grafica",size = "large", uiOutput('markdown'))
+                                        ),
+                                        tabPanel("FAMILIAR",
+                                            splitLayout(cellWidths = c("38%", "40%","20%"),
+                                                        textInput("Tpadre", "Nombre",placeholder = "Padre"),
+                                                        textInput("Tpadredir","Direccion"),
+                                                        textInput("Tpadretel", "Telefono")),
+                                            splitLayout(cellWidths = c("38%", "40%","20%"),
+                                                        cellArgs = list(style = "margin-top: -2em"),
+                                                        textInput("Tmadre","",placeholder = "Madre"),
+                                                        textInput("Tmadredir",""),
+                                                        textInput("Tmadretel","")),
+                                            splitLayout(cellWidths = c("38%", "40%","20%"),
+                                                        cellArgs = list(style = "margin-top: -2em"),
+                                                        textInput("Tesposa","",placeholder = "Esposa"),
+                                                        textInput("Tesposadir",""),
+                                                        textInput("Tesposatel","")),
+                                            numericInput("no.hermanos","Numero de hermanos",0,0,10,1,width = "200px"),
+                                            uiOutput("ui.Thermanos"),
+                                            tags$head(tags$style(HTML('
+                                                                      #Tobsfamiliar{
+                                                                      background-color: #dbdbdb;
+                                                                      border: none;
+                                                                      }'))),
+                                            textAreaInput("Tobsfamiliar","Observaciones sobre familia",width = "600px",
+                                                          rows = 5, resize = "vertical",placeholder = "Area exclusiva para el reclutador")
+                                        ),
+                                       # tabPanel("EMPLEOS",
+                                       #          lapply(1:3, function(i){
+                                       #               t.ingresos <- c("Ultimo", "Penultimo","Ante-penultimo")
+                                       #               splitLayout(cellWidths = c("40%","60%"),
+                                       #                           cellArgs = list(style = "margin-top: -2em"),
+                                       #                           HTML(paste0("<h5 style='padding-top: 20px'; align='right'>",t.ingresos[i],"</h5>")),
+                                       #                           textInput(paste0("Tcantingreso",i),placeholder = "Cantidad",label = ""))
+                                       #          })
+                                       # ),
+                                       # tabPanel("REFERENCIAS",
+                                       #          lapply(1:3, function(i){
+                                       #               t.ingresos <- c("Candidato", "Pareja","Hijos","Padres","Hermanos","Rentas","Pensiones", "Otros")
+                                       #               splitLayout(cellWidths = c("40%","60%"),
+                                       #                           cellArgs = list(style = "margin-top: -2em"),
+                                       #                           HTML(paste0("<h5 style='padding-top: 20px'; align='right'>",t.ingresos[i],"</h5>")),
+                                       #                           textInput(paste0("Tcantingreso",i),placeholder = "Cantidad",label = ""))
+                                       #          })
+                                       # ),
+                                       tabPanel("VIVIENDA",
+                                             splitLayout(cellWidths = c("20%","20%","18%","20%","20%"),
+                                                  pickerInput("Cvivienda","Tipo Vivienda",c("CASA","DUPLEX","HUESPED","DEPARTAMENTO","VECINDAD","OTRO"),
+                                                              options = list('dropupAuto' = T, 'mobile'=T,
+                                                                             container=  'body')),
+                                                  pickerInput("CVtipo","Status vivienda",c("PROPIA","RENTA","HIPOTECA","PRESTADA","CON LOS PADRES","OTRO"),
+                                                              options = list('dropupAuto' = T, 'mobile'=T,
+                                                                             container=  'body')),
+                                                  pickerInput("CVnivel","Nivel vivienda",c("RESIDENCIAL","ALTA-MEDIA","MEDIA-MEDIA","MEDIA-BAJA","BAJA"),
+                                                              options = list('dropupAuto' = T, 'mobile'=T,
+                                                                             container=  'body')),
+                                                  pickerInput("CVservicios","Servicios",c("LUZ","AGUA","PAVIMENTADA","DRENAJE","TELEFONO","VIGILANCIA"),
+                                                              options = list('dropupAuto' = T, 'mobile'=F,
+                                                                             container=  'body',
+                                                                             `actions-box` = TRUE),multiple = T),
+                                                  pickerInput("CVdistribucion","Distribucion",c("SALA","COMEDOR","SALA TV","COCINA","COCHERA","JARDIN","ESTUDIO","BIBLIOTECA","CUARTO SERVICIO"),
+                                                              options = list('dropupAuto' = T, 'mobile'=F,
+                                                                             container=  'body',
+                                                                             `actions-box` = TRUE),multiple = T)),
+                                             splitLayout(cellWidths = c("20%","20%","18%","20%","20%"),
+                                                    pickerInput("cvespacio","Espacio",c("SOBRADO","SUFICIENTE","LIMITADO","INSUFICIENTE"),
+                                                                options = list('dropupAuto' = T, 'mobile'=T,
+                                                                               container=  'body')),
+                                                    pickerInput("CVcondiciones","Condiciones",c("EXCELENTE","BUENO","REGULAR","MALO"),
+                                                                options = list('dropupAuto' = T, 'mobile'=T,
+                                                                               container=  'body')),
+                                                    pickerInput("CVlimpieza","Orden/Limpieza",c("EXCELENTE","BUENO","REGULAR","MALO"),
+                                                                options = list('dropupAuto' = T, 'mobile'=T,
+                                                                               container=  'body')),
+                                                    pickerInput("CVcalidad","Calidad muebles",c("EXCELENTE","BUENO","REGULAR","MALO"),
+                                                                options = list('dropupAuto' = T, 'mobile'=T,
+                                                                               container=  'body')),
+                                                    pickerInput("CVconservacion","Conserva muebles",c("EXCELENTE","BUENO","REGULAR","MALO"),
+                                                                options = list('dropupAuto' = T, 'mobile'=T,
+                                                                               container=  'body'))),
+                                             splitLayout(cellWidths = c("15%","20%","28%","15%","20%"),
+                                                    numericInput("CVbanos","Numero de baños",2,0,10,1),
+                                                    numericInput("CVrecamaras","Numero de recamaras",2,0,10,1),
+                                                    numericInput("CVcocheras","Cochera para cuantos autos",1,0,10,1),
+                                                    numericInput("CVtiempo","Años vivir ahi",1,0,80,1),
+                                                    numericInput("CVradicar","Años radicar en ciudad",1,0,80,1)),
+                                             tags$head(tags$style(HTML('
+                                                                      #Tobsvivienda{
+                                                                       background-color: #dbdbdb;
+                                                                       border: none;
+                                                                       }'))),
+                                             textAreaInput("Tobsvivienda","Observaciones sobre vivienda",width = "600px",
+                                                           rows = 5, resize = "vertical",placeholder = "Area exclusiva para el reclutador")
+                                      ),
+                                      tabPanel("ECONOMICO",
+                                             box(title = "Ingresos",width = 6,
+                                                    lapply(1:8, function(i){
+                                                         t.ingresos <- c("Candidato", "Pareja","Hijos","Padres","Hermanos","Rentas","Pensiones", "Otros")
+                                                         splitLayout(cellWidths = c("40%","60%"),
+                                                                     cellArgs = list(style = "margin-top: -2em"),
+                                                                     HTML(paste0("<h5 style='padding-top: 20px'; align='right'>",t.ingresos[i],"</h5>")),
+                                                              textInput(paste0("Tcantingreso",i),placeholder = "Cantidad",label = ""))
+                                                    })
+                                            ),
+                                            box(title = "Egresos",width = 6,
+                                                lapply(1:12, function(i){
+                                                     t.egresos <- c("Alimentacion","Renta","Telefono","Agua","Luz","TV paga","Transporte","Colegiatura","Medico/Medicina","Seguros","Vestir", "Otros")
+                                                     splitLayout(cellWidths = c("40%","60%"),
+                                                                 cellArgs = list(style = "margin-top: -2em"),
+                                                                 HTML(paste0("<h5 style='padding-top: 20px'; align='right'>",t.egresos[i],"</h5>")),
+                                                                 textInput(paste0("Tcantegreso",i),placeholder = "Cantidad",label = ""))
+                                                })
+                                            ),
+                                            tags$head(tags$style(HTML('
+                                                                      #Tobseconomico{
+                                                                      background-color: #dbdbdb;
+                                                                      border: none;
+                                                                      }'))),
+                                            textAreaInput("Tobseconomico","Observaciones sobre economía",width = "600px",
+                                                          rows = 5, resize = "vertical",placeholder = "Area exclusiva para el reclutador")
+                                      ),
+                                      tabPanel("ACTIVIDADES",
+                                          splitLayout(
+                                               textInput("Tdeportivo", "Deportivas",placeholder = "Separar las actividades con ; (punto y coma)"),
+                                               textInput("Tcultural","Culturales",placeholder = "Separar las actividades con ; (punto y coma)")),
+                                          splitLayout(
+                                               textInput("Tpoliticas", "Politicas",placeholder = "Separar las actividades con ; (punto y coma)"),
+                                               textInput("Tsindicales","Sindicales",placeholder = "Separar las actividades con ; (punto y coma)")),
+                                          splitLayout(
+                                               textInput("Treligiosas", "Religiosas",placeholder = "Separar las actividades con ; (punto y coma)"),
+                                               textInput("Tactotras","Otras",placeholder = "Separar las actividades con ; (punto y coma)"))
+                                      ),
+                                      tabPanel("SALUD",
+                                          splitLayout(
+                                               textInput("Salcohol","Alcohol",placeholder = "Cada cuantos días (0 sin no ingiere)"),
+                                               textInput("Scigarro","Tabaco",placeholder = "Cuantos al día (0 sin no fuma)"),
+                                               checkboxInput("Sdroga","Consume drogas?"),
+                                               checkboxInput("Sseguro","Tiene SGMM?")),
+                                          splitLayout(cellWidths = c("78%","20%"),
+                                               textInput("Scirugia","Intervenciones quirugicas",placeholder = "Separar las actividades con ; (punto y coma)"),
+                                               dateInput("Scirfecha","Ultima intervencion",max = Sys.Date(),startview = "year")),
+                                          textInput("Sinternado","Si ha estado internado. ¿Detalle cual fue el motivo?",width = "600px"),
+                                          textInput("Scronica","Detalle si tiene enfermedades cronicas",width = "600px"),
+                                          textInput("Stratamiento","Detalle si recibe tratamiento medico actualmente",width = "600px"),
+                                          textInput("Sorganos","Detalle si le han extirpado algún organo o parte de el",width = "600px"),
+                                          textInput("Sintervencion","Detalle si tiene alguna intervencion quirúrgica pendiente",width = "600px"),
+                                          tags$head(tags$style(HTML('
+                                                                      #Tobssalud{
+                                                                    background-color: #dbdbdb;
+                                                                    border: none;
+                                                                    }'))),
+                                            textAreaInput("Tobssalud","Observaciones sobre salud",width = "600px",
+                                                          rows = 5, resize = "vertical",placeholder = "Area exclusiva para el reclutador")
+                                      )
+                                )
+                           ),
+                           tabItem("abc-registro",
                                 box(title = "REGISTRAR AVANCE", collapsible = T,
-                                    collapsed = F, width = 4,
+                                    collapsed = F, width = 3,
                                     textOutput("ultimo.proceso"),
-                                    splitLayout(cellWidths = c("50%","50%"),
-                                                pickerInput("Cproceso","Proceso","",
-                                                            options = list('dropupAuto' = T, 'mobile'=T)),
-                                                uiOutput("ui.Cfecha")),
+                                    pickerInput("Cproceso","Proceso","",
+                                                options = list('dropupAuto' = T, 'mobile'=T)),
+                                    uiOutput("ui.Cfecha"),
                                     uiOutput("razon.rechazo"),
                                     actionBttn("cmd.guardar.proceso",  NULL, 
                                                style = "simple", color = "success", icon = icon("floppy-o"))
                                 ),
-                                box(title = 'ABC CANDIDATOS', width = 8, collapsible = T, collapsed = T,
-                                    splitLayout(cellWidths = c("0%","40%","60%"),
-                                                textInput("Tid", "ID"),
-                                                textInput("Tnombre", "Nombre"),
-                                                textInput("Tdireccion","Direccion")
-                                    ),
-                                    splitLayout(cellWidths = c("30%","30%","40%"),
-                                                textInput("Ttelefono", "Telefono"),
-                                                textInput("Tcelular", "Celular"),
-                                                textInput("Tcorreo","Correo")
-                                    ),
-                                    splitLayout(cellWidths = c("20%","20%","30%","30%"),
-                                                textInput("Tcp", "CP", placeholder = "CP de 5 digitos"),
-                                                pickerInput("Csexo","Sexo","", 
-                                                            options = list('dropupAuto' = T, 'mobile'=T,
-                                                                           container=  'body')),
-                                                pickerInput("Cescolaridad","Escolaridad","",
-                                                            options = list('dropupAuto' = T, 'mobile'=T,
-                                                                           container=  'body')),
-                                                pickerInput("Cmedio","Adquisicion","",
-                                                            options = list('dropupAuto' = T, 'mobile'=T,
-                                                                           container=  'body'))
-                                    ),
-                                    splitLayout(
-                                         dateInput("Tnacimiento","Fecha nacimiento",startview = "decade",
-                                                   language = "es"),
-                                         uiOutput("ui.cvacantes"),
-                                         uiOutput("ui.ccliente")),
-                                    actionBttn("cmd.nuevo.candidato", NULL, style = "simple",color = "primary", icon = icon("plus")),
-                                    actionBttn("cmd.guardar.candidato",  NULL, style = "simple", color = "success", icon = icon("floppy-o")),
-                                    actionBttn("cmd.borrar.candidato",  NULL, style = "simple", color = 'danger', icon = icon("minus"))),
-                                DT::dataTableOutput("tabla.seguimiento"),
+                                column(9,DT::dataTableOutput("tabla.seguimiento")),
                                 busyIndicator("Cargando registros...", wait = 1)
                         ),
                         tabItem("abc-bolsa",
@@ -210,6 +375,26 @@ dashboardPage(skin = "blue",
                                 ),
                                 dataTableOutput("tabla.metas"),
                                 busyIndicator("Cargando vacantes...", wait = 1)
+                        ),
+                        tabItem("define-proceso",
+                                p("Define los pasos de tu proceso de reclutamiento."),
+                                column(6, 
+                                       prettyCheckbox(inputId = "txt.name.solicitud", 
+                                                      label = "Paso 1 - Solicitud", value = TRUE, 
+                                                      icon = icon("check"), status = "success", 
+                                                      animation = "rotate", bigger = T),
+                                       lapply(2:6, function(i){
+                                            textInput(paste0("txt.paso",i),paste("Paso",i),placeholder = "Dejar vacio si no se requiere")
+                                       }),
+                                       prettyCheckbox(inputId = "txt.name.contratar", 
+                                                      label = "Paso final - Contratar", value = TRUE, 
+                                                      icon = icon("check"), status = "success", 
+                                                      animation = "rotate" ,bigger = T),
+                                       actionBttn(inputId = "cmd.definir.proceso", "Guardar proceso",icon = icon("save"),color = "success")),
+                                column(12, p("PRECAUCIÓN: Si ya tienes registros de avance de proceso
+                                  registrados, solo se cambiarán los nombres (etiqueta) del proceso realizado, no los registros. 
+                                  Esto puede causar errores y conflictos, antes de realizar un cambio te sugerimos te pongas en contacto con nosotros
+                                  en contacto@magro.com.mx"))
                         ),
                         tabItem("score",
                                 box(title = "Vacantes",width = 12, background = "black",

@@ -1,2 +1,2 @@
 Nombre,BD,port,host,allow_rechazados,allow_bajavacante
-MAGRO - DEMO,intelRecruit-Demo,3306,localhost,1,1
+MAGRO - DEMO,intelRecruit-Demo,3306,magroapp.com,1,1
