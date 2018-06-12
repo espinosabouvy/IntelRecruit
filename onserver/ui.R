@@ -23,7 +23,7 @@ library(stringi)  #install.packager('stringi')
 
 shinyUI(
 dashboardPage(skin = "blue",
-              dashboardHeader(title ="IntelRecruit v.3.1",titleWidth = 200),
+              dashboardHeader(title ="IntelRecruit v.3.21",titleWidth = 200),
               dashboardSidebar(width = 200,
                    sidebarMenuOutput("menu.login"),
                    sidebarMenuOutput("menu.reclut"),
@@ -61,6 +61,11 @@ dashboardPage(skin = "blue",
                                                 textInput("Tid", "ID"),
                                                 textInput("Tnombre", "Nombre"),
                                                 textInput("Tdireccion","Direccion")
+                                    ),
+                                    splitLayout(cellWidths = c("30%","30%","40%"),
+                                                textInput("Ttelefono", "Telefono"),
+                                                textInput("Tcelular", "Celular"),
+                                                textInput("Tcorreo","Correo")
                                     ),
                                     splitLayout(cellWidths = c("20%","20%","30%","30%"),
                                                 textInput("Tcp", "CP", placeholder = "CP de 5 digitos"),
@@ -235,19 +240,36 @@ dashboardPage(skin = "blue",
                                     plotOutput("p.en.proceso", height = 100)),
                                 busyIndicator("Calculando scoreboard...", wait = 1)
                         ),
+                        tabItem("supervision",
+                                box(title = "Generales", width = 12, background = "black",
+                                   valueBoxOutput("uis.total.vacantes",width = 3), #ok
+                                   valueBoxOutput("uis.total.solicitudes",width = 3),
+                                   valueBoxOutput("uis.gastado",width = 3),
+                                   valueBoxOutput("uis.vacantes.abiertas",width = 3) #ok
+                                ),
+                                box(title = "Vacantes", width = 12, background = "black",
+                                    valueBoxOutput("uis.vacantes.cerradas",width = 2), #ok
+                                    valueBoxOutput("uis.solicitudes.vacante",width = 2),
+                                    valueBoxOutput("uis.tiempo.promedio",width = 2),
+                                    valueBoxOutput("uis.costo.vacante",width = 2),
+                                    valueBoxOutput("uis.abiertas.promedio",width = 3), #ok
+                                    valueBoxOutput("uis.dias.vacantes",width = 2)
+                                ),
+                                box("Vacantes por cliente", width = 6,
+                                    plotOutput("ss.vacantes.cliente", height = "400px")),
+                                box("Vacantes por reclutador", width = 6,
+                                    plotOutput("ss.vacantes.reclut", height = "400px")),
+                                busyIndicator("Calculando indicadores...", wait = 1)
+                        ),
                         tabItem("kpis",
-                                box(title = "Solicitudes por vacante",width = 12, background = 'yellow',
-                                    # dropdownButton(
-                                    #      uiOutput("ui.filtro.procesos"),
-                                    #      circle = T, status = 'danger',icon = icon("gear"),
-                                    #      width = "300px"),
+                                box("SOLICITUDES POR VACANTE",width = 12, background = 'yellow',
                                    plotOutput("p.solicitudes.promedio",height = "200px")),
-                                box(title = "Tiempo utilizado para cerrar vacantes",width = 12, background = 'orange',
+                                box("TIEMPO UTILIZADO PARA CERRAR VACANTES",width = 12, background = 'orange',
                                    plotOutput("p.tiempos.proceso.score",height = "200px")),
-                                box(title = "Porcentaje de vacantes cerradas",width = 12, background = 'green',
+                                box("PORCENTAJE DE VACANTES CERRADAS",width = 12, background = 'green',
                                     plotOutput("p.porcentaje.cerradas",height = "200px")),
                                 busyIndicator("Calculando indicadores...", wait = 1)
-                      ),
+                         ),
                       tabItem("catalogos",
                               box("",
                                    pickerInput("cb.catalogo", label = "Catalogo a modificar",

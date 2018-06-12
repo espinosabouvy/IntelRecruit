@@ -7,7 +7,7 @@ shinyServer(function(input, output, session) {
      #VARIABLES PRINCIPALES -----------------------------------------------------------
      #suponer fecha, para que sys.date() con haga ridiculas las graficas
      #cambiar a sys.date() para el programa, fuera del demo
-     demo = F
+     demo = T
      if(demo){
           fecha.hoy <- ymd(20180222)
      } else {
@@ -22,11 +22,12 @@ shinyServer(function(input, output, session) {
                       "paleturquoise3", "#33A02C", "#E31A1C", "#FF7F00", "#6A3D9A" ,"#B15928")
      
      #main variables
+     '%!in%' <- Negate(`%in%`) #distinct of
      b.logged <- FALSE   #global status login
      id_user <- reactiveVal(character(0))  #id_user para filtros por usuario logeado
      level <- character(0)   #nivel del usuario logeado
      nombre <- character(0)  #nombre del usuario
-
+     
      fechas.selected <- character(0)  #una frecuencia por default al cargar kpis
      
      #tablas guardadas de consultas
@@ -71,7 +72,13 @@ shinyServer(function(input, output, session) {
           if(!exists("cp")) cp <<- read.csv("www/cp.csv")
           contra <- as.character(cp$contrasena)
           usuario <- as.character(cp$usuario)
-          
+          # contra <- 'M1-5up3r.b4r4'
+          # usuario <- "usrBara"
+          # contra <- 'M4gr0-demo'
+          # usuario <- "demo"
+          contra <- ''
+          usuario <- "root"
+
           #conexion con la bd
           con <- tryCatch(
                {return(dbConnect(RMariaDB::MariaDB(), dbname = as.character(cp$BD),
@@ -522,8 +529,8 @@ shinyServer(function(input, output, session) {
      output$menu.login <- renderMenu({
           sidebarMenu(
                menuItem("Ingresar al sistema", tabName = "portada", icon = icon('sign-in'),selected = T),
-               textInput("s.usuario","Usuario:"),
-               passwordInput("s.contra", "Contraseña:"),
+               textInput("s.usuario","Usuario:", placeholder = "User: reclut o super"),
+               passwordInput("s.contra", "Contraseña:", placeholder = "Pass: 1234"),
                actionBttn(inputId = "b.login", label = "Entrar", 
                           style = "jelly", color = "primary")
           )
@@ -593,7 +600,7 @@ shinyServer(function(input, output, session) {
                      closeOnClickOutside = FALSE,
                      type = "info")
      }
-     
+
      #KPI'S ----------------------------------------------------------
      fun.kpi.tiempos <- reactive({
           if(is.null(input$frecuencia)) return(NULL)
@@ -934,7 +941,7 @@ shinyServer(function(input, output, session) {
           
           kpi.tiempo <<- q.kpi.tiempo.proceso(id_usuario = id_user(), 
                                               date.inicio = fechas)  
-          
+
           tiempo <- kpi.tiempo%>%
                group_by(asesor, id_proceso, proceso)%>%
                summarise(dias = round(mean(fecha-fecha_vacante),1))
@@ -1051,7 +1058,7 @@ shinyServer(function(input, output, session) {
           
           if(nrow(costo.x.medio)==0)return(NULL)
           
-          ggplot(costo.x.medio, aes(medio, costo,label = paste0(medio,"- $",costo)), group = 1) + 
+          ggplot(costo.x.medio, aes(medio, costo,label = paste0(medio,"- $",costo), fill = medio), group = 1) + 
                geom_bar(stat = 'identity') + 
                coord_flip() +
                geom_text(size = 3, hjust = 'inward', colour = "white") + 
@@ -1176,11 +1183,19 @@ shinyServer(function(input, output, session) {
                geom_bar(stat = 'identity')  + 
                coord_flip() + 
                scale_y_continuous(limits = max(pp$PCT) * c(-1,1)) + 
-               geom_line(lwd = 1, col = 'black') +
+               geom_line(lwd = 1, col = 'white') +
                geom_label(size = 3) + 
                ylab("") +
                xlab("") +
-               theme(legend.position = 'top', axis.text.x = element_blank()) + 
+               theme(legend.position = "top", 
+                     legend.title = element_blank(),
+                     legend.text = element_text(size = 7),
+                     legend.key.size = unit(.3, 'cm'),
+                     axis.text.y = element_text(size = 7),
+                     axis.text.x = element_blank(),
+                     panel.background = element_rect(fill = 'black', colour = 'black'),
+                     panel.grid = element_blank(),
+                     axis.ticks = element_blank()) + 
                scale_fill_manual(values = mis.colores)
      })
      #termina kpi y scoreboard ---
@@ -1199,7 +1214,7 @@ shinyServer(function(input, output, session) {
           
           datos <- seguimiento%>%
                mutate("proceso" = paste0(orden_proceso,".",proceso))%>%
-               select(id_candidato, candidato, cliente, id_vacante, vacante, proceso, fecha)%>%
+               select(id_candidato, cliente, id_vacante, vacante, candidato, proceso, fecha)%>%
                spread(proceso, fecha)%>%
                arrange(cliente, vacante, candidato)%>%
                tibble::column_to_rownames("id_candidato")
@@ -1381,202 +1396,6 @@ shinyServer(function(input, output, session) {
           if(c_procesos[c_procesos$nombre == proceso,]$cierra_proceso == 1) new.vacantes(new.vacantes()+1)
      }      
      
-     #ABC CANDIDATOS ---------------------------------------------------------------------
-     observeEvent(input$cmd.nuevo.candidato,{  #reset de candidatos (nuevo candidato)
-          req(input$cmd.nuevo.candidato)
-          
-          updateTextInput(session, "Tid", value = "")
-          updateTextInput(session, "Tnombre", placeholder = "Nombre del candidato", value = "")
-          updateTextInput(session, "Tdireccion", placeholder = "Calle, No. Colonia, Ciudad, Estado, Pais", value = "")
-          updateTextInput(session, "Ttelefono", placeholder = "(lada) telefono", value = "")
-          updateTextInput(session, "Tcelular", placeholder = "(lada) telefono", value = "")
-          updateTextInput(session, "Tcorreo", placeholder = "correo electronico", value = "")
-          updateTextInput(session, "Tcp", placeholder = "CP 5 digitos", value = "")
-          updateDateInput(session, "Tnacimiento", value = fecha.hoy)
-          
-          proxy = dataTableProxy('tabla.seguimiento', session)
-          selectRows(proxy, selected = NULL)
-          
-          #muestra combos de asignacion a vacante
-          output$ui.cvacantes <- renderUI({
-               vacantes <- q.vacantes(id_status = 1,id_usuario = id_user(), all = F)
-               pickerInput("Cvacantes","Vacantes disponibles",
-                           choices = unique(vacantes$vacante),
-                           options = list('dropupAuto' = T, 'mobile'=T))
-          })
-          
-     })
-     
-     observeEvent(c(input$Cvacantes, input$cmd.nuevo.candidato),{
-          if(is.null(input$Cvacantes)) return(NULL)
-          
-          vacantes <- q.vacantes(id_status = 1,id_usuario = id_user(), all = F)%>%
-               filter(vacante == input$Cvacantes)
-          
-          output$ui.ccliente <- renderUI({
-               pickerInput("Cclientes","Clientes",
-                           choices = unique(vacantes$cliente),
-                           options = list('dropupAuto' = T, 'mobile'=T))
-          })
-     })
-     
-     observeEvent(input$cmd.borrar.candidato, {
-          req(input$cmd.borrar.candidato)
-          id <- input$Tid
-          
-          if(id !=""){
-               cat(paste("Borrando candidato:", id), "\n")
-               
-               shinyalert(title = "Confirmar", 
-                          text =  "¿Estas seguro de borrar este candidato?",
-                          closeOnEsc = TRUE,
-                          closeOnClickOutside = FALSE,
-                          html = FALSE,
-                          type = "warning",
-                          timer = 0,
-                          animation = TRUE,
-                          showConfirmButton = TRUE,
-                          showCancelButton = TRUE,
-                          confirmButtonText = "Si, eliminar candidato",
-                          confirmButtonCol = "#AEDEF4",
-                          cancelButtonText = "No, cancela eliminar",
-                          callbackR = function(x) if(x==T) eliminar.candidato())
-          }
-     })
-     
-     eliminar.candidato <- function(){
-          id <- input$Tid
-          qupdate <- paste0("UPDATE candidatos SET baja = 1 WHERE id = " , id)
-          
-          con <- conectar()
-          dbExecute(con,qupdate)
-          dbDisconnect(con) 
-          
-          #quita seleccion
-          proxy = dataTableProxy('tabla.seguimiento', session)
-          selectRows(proxy, selected = NULL)
-          
-          #actualiza tabla                   
-          new.seguimiento(new.seguimiento()+1)
-     }
-     
-     observeEvent(input$cmd.guardar.candidato,{  #boton guardar
-          req(input$cmd.guardar.candidato)
-          id <- input$Tid
-          
-          msg <- ""
-          if((fecha.hoy - input$Tnacimiento)/365 < 15) msg = "El candidato tiene menos de 15 años, favor de verificar"
-          if(grepl("[^0-9]", input$Tcp) | nchar(input$Tcp)!=5) msg = "El codigo postal debe ser un numero de 5 digitos"
-          if(input$Tnombre =="") msg = "El nombre del candidato es obligatorio"
-          
-          if(msg!=""){
-               shinyalert("Error", msg,type = "error")
-               return(NULL)
-          }
-          
-          if(id==""){ #si es nuevo - se confirma que se agregará el paso inicial como realizado
-               msg = "¿Estás seguro de querer guardar el registro de este candidato nuevo?"
-               
-          } else {
-               msg = "¿Estas seguro de guardar los cambios realizados?"
-          }
-          
-          shinyalert(title = "Confirmar", 
-                     text =  msg,
-                     closeOnEsc = TRUE,
-                     closeOnClickOutside = FALSE,
-                     html = FALSE,
-                     type = "warning",
-                     timer = 0,
-                     animation = TRUE,
-                     showConfirmButton = TRUE,
-                     showCancelButton = TRUE,
-                     confirmButtonText = "Si, guardar",
-                     confirmButtonCol = "#AEDEF4",
-                     cancelButtonText = "No, cancela",
-                     callbackR = function(x) if(x==T) guardar.candidatos())
-     })
-     
-     guardar.candidatos <- function(id){ #confirmar guardar
-          id <- input$Tid
-          cat(paste("Candidatos a modificar:", id), "\n")
-          
-          id_sexo <- c_sexo[c_sexo$nombre == input$Csexo,1]
-          id_escolaridad <- c_escolaridad[c_escolaridad$nombre == input$Cescolaridad,1]
-          id_medio <- c_medio[c_medio$nombre == input$Cmedio, 1]
-          
-          #mayusculas, quita acentos y signos de puntuacion
-          nombre.candidato <- gsub("[[:punct:]]","", stri_replace_all_regex(toupper(input$Tnombre), 
-                                                                            c('À','È','Í','Ó','Í','Ñ'),
-                                                                            c('A','E','I','O','U','N'), 
-                                                                            vectorize_all = F))
-          con <- conectar()              
-          if(id== ""){  #nuevo registro
-               if(is.null(input$Cvacantes)) { #no se presionó agregar nuevo y no se puede seleccionar vacante
-                    shinyalert("Error", "Presiona el boton (+) para agregar un nuevo candidato", type = "error")
-                    return(NULL)
-               }
-               
-               #insertar candidato y crear proceso inicial con fecha de hoy
-               qinsert <- paste0("INSERT INTO candidatos
-                                 (nombre, direccion, 
-                                 telefono, celular, correo,
-                                 cp, fecha_nacimiento, id_sexo, 
-                                 id_escolaridad, id_medio) ",
-                                 "VALUES ('",
-                                 nombre.candidato, "', 
-                                 '",toupper(input$Tdireccion), "',
-                                 '",input$Ttelefono, "',
-                                 '",input$Tcelular, "',
-                                 '",input$Tcorreo, "',
-                                 ", input$Tcp, ", ",
-                                 gsub("-","", ymd(input$Tnacimiento)), ", 
-                                 ", id_sexo, ", ",
-                                 id_escolaridad, ", 
-                                 ", id_medio, ")")
-               dbExecute(con,qinsert)
-               
-               #id de ultimo candidato agregado
-               id.candidato <- dbGetQuery(con,"SELECT id, nombre FROM candidatos ORDER BY id DESC LIMIT 1")
-               
-               query = paste0("SELECT vac.id
-                              FROM vacantes vac
-                              LEFT JOIN vacantes_nombre vn ON vn.id = vac.id_nombre_vacante
-                              LEFT JOIN clientes cl ON cl.id = vac.id_cliente
-                              WHERE cl.nombre = '", input$Cclientes,"' AND
-                              vn.nombre = '", input$Cvacantes , "' AND
-                              vac.id_status = 1 AND
-                              vac.id_usuario = ", id_user())
-               id_vacante <- dbGetQuery(con, query)
-               
-               qinsert <- paste0("INSERT INTO vacantes_following
-                                 (id_candidato, id_vacante, id_proceso, fecha)
-                                 VALUES (",
-                                 id.candidato$id, ",", id_vacante$id, ",", 1, ",", gsub("-","", ymd(fecha.hoy)),")")
-               
-               dbExecute(con,qinsert)
-               new.seguimiento(new.seguimiento()+1)  #actualiza tabla seguimiento
-               
-          } else {  #actualizar registro
-               qupdate <- paste0("UPDATE candidatos 
-                                 SET nombre = '", input$Tnombre,
-                                 "' ,direccion = '" , toupper(input$Tdireccion),
-                                 "', telefono = '" , input$Ttelefono,
-                                 "', celular = '" , input$Tcelular,
-                                 "', correo = '" , input$Tcorreo,
-                                 "' ,cp = ", input$Tcp, 
-                                 " ,fecha_nacimiento = ", gsub("-","", ymd(input$Tnacimiento)),
-                                 " ,id_sexo = ", id_sexo,
-                                 " ,id_escolaridad = ", id_escolaridad,
-                                 " ,id_medio = " , id_medio,
-                                 " WHERE id = " , id)
-               
-               dbExecute(con,qupdate)
-          }
-          dbDisconnect(con) 
-     }
-     
-     #Termina ABC candidatos---
      #termina Registro de avances del proceso---
      
      #ASIGNACION DE CANDIDATOS A VACANTES ---------------------------------------------
@@ -1895,7 +1714,6 @@ shinyServer(function(input, output, session) {
      })
      
      observeEvent(input$cmd.borrar.gasto, {
-          req(input$cmd.borrar.gasto)
           id <- input$Gid
           cat(paste("Borrando gasto:", id), "\n")
           if(id !=""){
@@ -1950,7 +1768,6 @@ shinyServer(function(input, output, session) {
      }
      
      observeEvent(input$cmd.guardar.gasto,{  #boton guardar
-          req(input$cmd.guardar.gasto)
           id <- input$Gid
           
           if(id==""){ #si es nuevo - se confirma que se agregará el paso inicial como realizado
@@ -2088,7 +1905,6 @@ shinyServer(function(input, output, session) {
      })
      
      observeEvent(input$cmd.borrar.valor,{
-          req(input$cmd.borrar.valor)
           id <- input$Cid
           nombre.tabla <- c_catalogos[c_catalogos$descripcion==input$cb.catalogo,2]
           
@@ -2150,7 +1966,6 @@ shinyServer(function(input, output, session) {
      }
      
      observeEvent(input$cmd.guardar.valor,{  #boton guardar
-          req(input$cmd.guardar.valor)
           id_valor <- input$Cid
           nombre.tabla <- c_catalogos[c_catalogos$descripcion==input$cb.catalogo,2]
           
@@ -2284,7 +2099,6 @@ shinyServer(function(input, output, session) {
      })
 
      observeEvent(input$cmd.borrar.meta,{
-          req(input$cmd.borrar.meta)
           id <- input$Mid
 
           cat(paste("Borrando meta:", id, "\n"))
@@ -2326,10 +2140,8 @@ shinyServer(function(input, output, session) {
      }
 
      observeEvent(input$cmd.guardar.meta,{  #boton guardar
-          req(input$cmd.guardar.meta)
           id <- input$Mid
-          
-          
+
           cat(paste("Modificando o agregando meta al id", id, "\n"))
           
           if(grepl("[^0-9//.]", input$Mmeta) | is.na(as.double(input$Mmeta))){
@@ -2740,7 +2552,6 @@ shinyServer(function(input, output, session) {
      })
      
      observeEvent(input$cmd.borrar.vacante, {
-          req(input$cmd.borrar.vacante)
           id <- input$Vid
           cat(paste("Borrando vacante:", id), "\n")
           if(id !=""){
@@ -2790,7 +2601,6 @@ shinyServer(function(input, output, session) {
      }
 
      observeEvent(input$cmd.guardar.vacante,{  #boton guardar
-          req(input$cmd.guardar.vacante)
           id <- input$Vid
 
           if(id==""){ #si es nuevo - se confirma que se agregará el paso inicial como realizado
@@ -2912,7 +2722,6 @@ shinyServer(function(input, output, session) {
      })
      
      observeEvent(input$cmd.borrar.cliente,{
-          req(input$cmd.borrar.cliente)
           ren <- input$tabla.clientes_rows_selected
           if(is.null(ren)) return(NULL)
           id <- input$Ctid
@@ -2968,7 +2777,6 @@ shinyServer(function(input, output, session) {
      }
 
      observeEvent(input$cmd.guardar.cliente,{  #boton guardar
-          req(input$cmd.guardar.cliente)
           id <- input$Ctid
           cat(paste("Modificando o agregando cliente id", id))
           
@@ -3046,7 +2854,11 @@ shinyServer(function(input, output, session) {
      
      #EXIT LOGIN -----------------------------------------------------------------------
      observeEvent(input$b.salir,{
-
+          salir()
+          
+     })
+     
+     salir <- function(){
           output$menu.login <- renderMenu({
                sidebarMenu(
                     menuItem("Ingresar al sistema", tabName = "portada", icon = icon('sign-in'),selected = T),
@@ -3073,7 +2885,7 @@ shinyServer(function(input, output, session) {
           new.clientes(new.clientes()+1)
           new.users(new.users()+1)
           
-     })
+     }
      
      #combos generales
      observeEvent(input$frecuencia,{
@@ -3196,7 +3008,265 @@ shinyServer(function(input, output, session) {
                alt = "Bienvenido"
           ))
      }, deleteFile = FALSE)
+     
      #Termina generales logins y menus ---  
+     
+     #ACTUALIZAR PROCESO ----------------------------------
+     observeEvent(input$cmd.definir.proceso, {
+          msg = "Este proceso agregará o quitará pasos de tu proceso de reclutamiento y seleccion, o cambia el nombre del proceso
+          si fuera el caso, es un proceso crítico de IntelRecruit  
+          ¿Estás seguro de continuar?"
+          
+          shinyalert(title = "Confirmación", 
+                     text =  msg,
+                     closeOnEsc = TRUE,
+                     closeOnClickOutside = FALSE,
+                     html = FALSE,
+                     type = "warning",
+                     timer = 0,
+                     animation = TRUE,
+                     showConfirmButton = TRUE,
+                     showCancelButton = TRUE,
+                     confirmButtonText = "Si, quiero guardar",
+                     confirmButtonCol = "#AEDEF4",
+                     cancelButtonText = "No, cancelar",
+                     callbackR = function(x) if(x==T) guarda.proceso())
+     })
+     
+     guarda.proceso <- function(){
+          con <- conectar()
+          ids <- c(2,3,6,7,8)
+          for (i in 2:6){
+               valor <- input[[paste0("txt.paso",i)]]
+               v.baja <- ifelse(valor =="",1, 0)
+               
+               qupdate <- paste0("UPDATE vacantes_procesos
+                                 SET nombre = '", valor, "',
+                                 orden = '" , i, "',
+                                 baja = ", v.baja, " 
+                                 WHERE id = " , ids[i-1])
+               
+               dbExecute(con, qupdate)
+          }
+          dbDisconnect(con)
+          
+          #actualiza procesos
+          salir()
+          showNotification(paste("Modificación guardada correctamente"), type = "message",duration = 5)
+     }
+     
+     
+     #termina actualizar proceso ---
+     
+     #ABC CANDIDATOS ---------------------------------------------------------------------
+     
+     #detalle de candidatos
+     output$markdown <- renderUI({
+          #HTML(markdown::markdownToHTML(knit('candidato.rmd', quiet = TRUE)))
+          HTML(markdown::renderMarkdown(knit('candidato.rmd', quiet = TRUE)))
+     })
+     
+     #carga de datos de candidato detalles
+     observeEvent(input$no.hermanos,{
+          if(is.null(input$no.hermanos)) return(NULL)
+          
+          output$ui.Thermanos <- renderUI({
+               if(input$no.hermanos==0) return(NULL)
+               
+               lapply(1:input$no.hermanos, function(h) {
+                    splitLayout(cellWidths = c("38%", "40%","20%"),
+                                cellArgs = list(style = "margin-top: -2em"),
+                                textInput(paste0("Thno",h),"",placeholder = "Hermano"),
+                                textInput(paste0("Thnodir",h),""),
+                                textInput(paste0("Thnotel",h),""))
+               })
+          })
+     })
+     
+     observeEvent(input$cmd.nuevo.candidato,{  #reset de candidatos (nuevo candidato)
+          clean.candidatos()
+
+          proxy = dataTableProxy('tabla.seguimiento', session)
+          selectRows(proxy, selected = NULL)
+          
+          #muestra combos de asignacion a vacante
+          output$ui.cvacantes <- renderUI({
+               vacantes <- q.vacantes(id_status = 1,id_usuario = id_user(), all = F)
+               pickerInput("Cvacantes","Vacantes disponibles",
+                           choices = unique(vacantes$vacante),
+                           options = list('dropupAuto' = T, 'mobile'=T, style = "btn-primary"))
+          })
+          
+     })
+     
+     observeEvent(c(input$Cvacantes, input$cmd.nuevo.candidato),{
+          if(is.null(input$Cvacantes)) return(NULL)
+          
+          vacantes <- q.vacantes(id_status = 1,id_usuario = id_user(), all = F)%>%
+               filter(vacante == input$Cvacantes)
+          
+          output$ui.ccliente <- renderUI({
+               pickerInput("Cclientes","Cliente",
+                           choices = unique(vacantes$cliente),
+                           options = list('dropupAuto' = T, 'mobile'=T, style = "btn-primary"))
+          })
+     })
+     
+     observeEvent(input$cmd.borrar.candidato, {
+          id <- input$Tid
+          
+          if(id !=""){
+               cat(paste("Borrando candidato:", id), "\n")
+               
+               shinyalert(title = "Confirmar", 
+                          text =  "¿Estas seguro de borrar este candidato?",
+                          closeOnEsc = TRUE,
+                          closeOnClickOutside = FALSE,
+                          html = FALSE,
+                          type = "warning",
+                          timer = 0,
+                          animation = TRUE,
+                          showConfirmButton = TRUE,
+                          showCancelButton = TRUE,
+                          confirmButtonText = "Si, eliminar candidato",
+                          confirmButtonCol = "#AEDEF4",
+                          cancelButtonText = "No, cancela eliminar",
+                          callbackR = function(x) if(x==T) eliminar.candidato())
+          }
+     })
+     
+     eliminar.candidato <- function(){
+          id <- input$Tid
+          qupdate <- paste0("UPDATE candidatos SET baja = 1 WHERE id = " , id)
+          
+          con <- conectar()
+          dbExecute(con,qupdate)
+          dbDisconnect(con) 
+          
+          #quita seleccion
+          proxy = dataTableProxy('tabla.seguimiento', session)
+          selectRows(proxy, selected = NULL)
+          
+          #actualiza tabla                   
+          new.seguimiento(new.seguimiento()+1)
+     }
+     
+     observeEvent(input$cmd.guardar.candidato,{  #boton guardar
+          id <- input$Tid
+          
+          msg <- ""
+          if((fecha.hoy - input$Tnacimiento)/365 < 15) msg = "El candidato tiene menos de 15 años, favor de verificar"
+          if(grepl("[^0-9]", input$Tcp) | nchar(input$Tcp)!=5) msg = "El codigo postal debe ser un numero de 5 digitos"
+          if(input$Tnombre =="") msg = "El nombre del candidato es obligatorio"
+          
+          if(msg!=""){
+               shinyalert("Error", msg,type = "error")
+               return(NULL)
+          }
+          
+          if(id==""){ #si es nuevo - se confirma que se agregará el paso inicial como realizado
+               msg = "¿Estás seguro de querer guardar el registro de este candidato nuevo?"
+               
+          } else {
+               msg = "¿Estas seguro de guardar los cambios realizados?"
+          }
+          
+          shinyalert(title = "Confirmar", 
+                     text =  msg,
+                     closeOnEsc = TRUE,
+                     closeOnClickOutside = FALSE,
+                     html = FALSE,
+                     type = "warning",
+                     timer = 0,
+                     animation = TRUE,
+                     showConfirmButton = TRUE,
+                     showCancelButton = TRUE,
+                     confirmButtonText = "Si, guardar",
+                     confirmButtonCol = "#AEDEF4",
+                     cancelButtonText = "No, cancela",
+                     callbackR = function(x) if(x==T) guardar.candidatos())
+     })
+     
+     guardar.candidatos <- function(id){ #confirmar guardar
+          id <- input$Tid
+          cat(paste("Candidatos a modificar:", id), "\n")
+          
+          id_sexo <- c_sexo[c_sexo$nombre == input$Csexo,1]
+          id_escolaridad <- c_escolaridad[c_escolaridad$nombre == input$Cescolaridad,1]
+          id_medio <- c_medio[c_medio$nombre == input$Cmedio, 1]
+          
+          #mayusculas, quita acentos y signos de puntuacion
+          nombre.candidato <- gsub("[[:punct:]]","", stri_replace_all_regex(toupper(input$Tnombre), 
+                                                                            c('À','È','Í','Ó','Í','Ñ'),
+                                                                            c('A','E','I','O','U','N'), 
+                                                                            vectorize_all = F))
+          con <- conectar()              
+          if(id== ""){  #nuevo registro
+               if(is.null(input$Cvacantes)) { #no se presionó agregar nuevo y no se puede seleccionar vacante
+                    shinyalert("Error", "Presiona el boton (+) para agregar un nuevo candidato", type = "error")
+                    return(NULL)
+               }
+               
+               #insertar candidato y crear proceso inicial con fecha de hoy
+               qinsert <- paste0("INSERT INTO candidatos
+                                 (nombre, direccion, 
+                                 telefono, celular, correo,
+                                 cp, fecha_nacimiento, id_sexo, 
+                                 id_escolaridad, id_medio) ",
+                                 "VALUES ('",
+                                 nombre.candidato, "', 
+                                 '",toupper(input$Tdireccion), "',
+                                 '",input$Ttelefono, "',
+                                 '",input$Tcelular, "',
+                                 '",input$Tcorreo, "',
+                                 ", input$Tcp, ", ",
+                                 gsub("-","", ymd(input$Tnacimiento)), ", 
+                                 ", id_sexo, ", ",
+                                 id_escolaridad, ", 
+                                 ", id_medio, ")")
+               dbExecute(con,qinsert)
+               
+               #id de ultimo candidato agregado
+               id.candidato <- dbGetQuery(con,"SELECT id, nombre FROM candidatos ORDER BY id DESC LIMIT 1")
+               
+               query = paste0("SELECT vac.id
+                              FROM vacantes vac
+                              LEFT JOIN vacantes_nombre vn ON vn.id = vac.id_nombre_vacante
+                              LEFT JOIN clientes cl ON cl.id = vac.id_cliente
+                              WHERE cl.nombre = '", input$Cclientes,"' AND
+                              vn.nombre = '", input$Cvacantes , "' AND
+                              vac.id_status = 1 AND
+                              vac.id_usuario = ", id_user())
+               id_vacante <- dbGetQuery(con, query)
+               
+               qinsert <- paste0("INSERT INTO vacantes_following
+                                 (id_candidato, id_vacante, id_proceso, fecha)
+                                 VALUES (",
+                                 id.candidato$id, ",", id_vacante$id, ",", 1, ",", gsub("-","", ymd(fecha.hoy)),")")
+               
+               dbExecute(con,qinsert)
+               new.seguimiento(new.seguimiento()+1)  #actualiza tabla seguimiento
+               
+          } else {  #actualizar registro
+               qupdate <- paste0("UPDATE candidatos 
+                                 SET nombre = '", input$Tnombre,
+                                 "' ,direccion = '" , toupper(input$Tdireccion),
+                                 "', telefono = '" , input$Ttelefono,
+                                 "', celular = '" , input$Tcelular,
+                                 "', correo = '" , input$Tcorreo,
+                                 "' ,cp = ", input$Tcp, 
+                                 " ,fecha_nacimiento = ", gsub("-","", ymd(input$Tnacimiento)),
+                                 " ,id_sexo = ", id_sexo,
+                                 " ,id_escolaridad = ", id_escolaridad,
+                                 " ,id_medio = " , id_medio,
+                                 " WHERE id = " , id)
+               
+               dbExecute(con,qupdate)
+          }
+          dbDisconnect(con) 
+     }
+     
+     #Termina ABC candidatos---
      
      #CARGAR MENUS --------------------------------------------------------------------
      cargar_menus <- function(){ #si login correcto
@@ -3229,8 +3299,7 @@ shinyServer(function(input, output, session) {
                updateTextInput(session, paste0("txt.paso",i),value = p)
                i=i+1
           }
-          
-          
+
           observeEvent(new.users(), {
                a <- isolate(new.users())
                updatePickerInput(session, "Vreclut", choices = c_reclutadores$nombre)
@@ -3251,7 +3320,7 @@ shinyServer(function(input, output, session) {
                if (nrow(c_procesos)==0){
                     msg = "Es necesario que un supervisor defina el proceso de reclutamiento.
                     Por favor sigue las indicaciones para realizarlo, es una parte crítica de IntelRecruit"
-                    
+
                     shinyalert(title = "Configuracion", 
                                text =  msg,
                                closeOnEsc = TRUE,
@@ -3273,9 +3342,9 @@ shinyServer(function(input, output, session) {
                     output$menu.reclut <- renderMenu({
                          sidebarMenu(
                               uiOutput("ui.reclut")
-                         )
+                    )
                     })
-                    
+     
                     output$menu.logged <- renderMenu({
                          sidebarMenu(
                               uiOutput("ui.fechas"),
@@ -3325,11 +3394,11 @@ shinyServer(function(input, output, session) {
                     salir()
                     
                } else {
-                    
+
                     output$menu.reclut <- renderMenu({
                          return(NULL)
                     })
-                    
+     
                     output$menu.logged <- renderMenu({
                          sidebarMenu(
                               menuItem("SEGUIMIENTO VACANTES", tabName = "abc-registro", icon = icon("bullseye"), selected = T),
@@ -3373,5 +3442,38 @@ shinyServer(function(input, output, session) {
                )
           })
           
+     }
+
+     #limpieza campos de candidatos ---------------
+     clean.candidatos <- function(){
+          txts <- c("Tid","Tnombre","Tdireccion","Ttelefono","Tcelular","Tcorreo","Tcp",
+                      "Timss","Tpadre","Tpadredir","Tpadretel","Tmadre","Tmadredir","Tmadretel",
+                      "Tesposa","Tesposadir","Tesposatel","Tdeportivo","Tcultural","Tpoliticas",
+                    "Tsindicales","Treligiosas","Tactotras","Salcohol","Scigarro","Scirugia",
+                    "Sinternado","Scronica","Stratamiento","Sorganos","Sintervencion")
+          
+          for(i in txts){
+               updateTextInput(session,i, value = "")
+          }
+          
+          txts.area <- c("Tobsfamiliar","Tobseconomico","Tobsvivienda","Tobssalud")
+          for(i in txts.area){
+               updateTextAreaInput(session,i, value = "")
+          }
+          
+          pickers <- c("CVservicios","CVdistribucion")
+          for(i in pickers){
+               updatePickerInput(session,i,selected = character(0))
+          }
+          
+          for(i in 1:8){ #ingresos
+               updateTextInput(session, paste0("Tcantingreso",i), value = "")
+          }
+          for(i in 1:12){  #egresos
+               updateTextInput(session, paste0("Tcantegreso",i), value = "")
+          }
+          
+          numericInput("no.hermanos",value = 0)  #hermanos
+
      }
 })
