@@ -69,8 +69,9 @@ shinyServer(function(input, output, session) {
      #conexion la bd
      conectar <- function(){
           if(!exists("cp")) cp <<- read.csv("www/cp.csv")
-          contra <- 'M1-5up3r.b4r4'
-          usuario <- "usrBara"
+          contra <- as.character(cp$contrasena)
+          usuario <- as.character(cp$usuario)
+          
           #conexion con la bd
           con <- tryCatch(
                {return(dbConnect(RMariaDB::MariaDB(), dbname = as.character(cp$BD),
