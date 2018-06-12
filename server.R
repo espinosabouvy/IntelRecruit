@@ -33,6 +33,7 @@ shinyServer(function(input, output, session) {
      kpi.tiempo <- NULL
      seguimiento <-  NULL
      embudo <-  NULL
+     intentos <- 0
      tabla.de.seguimiento <- NULL
           new.seguimiento <- reactiveVal(0)
      vacantes.abiertas <- NULL
@@ -514,13 +515,13 @@ shinyServer(function(input, output, session) {
           }
           return(gsub("-","",fechas))
      }
-     
      #termina funciones de consultas---
      
      #LOGIN ---------------------------------------------------
      #carga pantalla para login   
      output$menu.login <- renderMenu({
           sidebarMenu(
+               HTML(paste0("<h4 style='padding-left: 20px'><b>IR-",cp$Nombre,"</h4>")),
                menuItem("Ingresar al sistema", tabName = "portada", icon = icon('sign-in'),selected = T),
                textInput("s.usuario","Usuario:"),
                passwordInput("s.contra", "Contraseña:"),
@@ -532,6 +533,14 @@ shinyServer(function(input, output, session) {
      #observa cuando se hace click en login
      observeEvent(input$b.login,{
           
+          if (input$s.usuario == "" | input$s.contra == ""){
+               output$menu.logged <- renderMenu({
+                    intentos <<- intentos + 1
+                    sidebarMenu(HTML(paste0("<h5 style='padding-left:10px;color:Tomato;'>Escriba un usuario y <br> una contraseña</h5>")))
+               })
+               return(NULL)
+          }
+
           con <- conectar()
           #verifica reset de la contraseña
           query <- paste0("SELECT id, reset FROM users WHERE
@@ -556,6 +565,7 @@ shinyServer(function(input, output, session) {
                           cancelButtonText = "No, cancela",
                           callbackR = function(x) if(x==T) guarda.contra(id = reset$id))
           } else {
+               
                con <- conectar()
                query <- paste0("SELECT id, user,nombre,level FROM users WHERE baja = 0 
                                AND user = '", input$s.usuario ,
@@ -573,7 +583,9 @@ shinyServer(function(input, output, session) {
                     # sendSweetAlert(session, "Incorrecto","Usuario o contraseña incorrectos",
                     #                "error")
                     output$menu.logged <- renderMenu({
-                         sidebarMenu(h5("Usuario o contraseña incorrectos"))
+                         intentos <<- intentos + 1
+                         sidebarMenu(HTML(paste0("<h5 style='padding-left:10px;color:Tomato;'>Usuario o <br> contraseña incorrectos (",
+                         intentos,")</h5>")))
                     })
                }
           }
@@ -601,7 +613,7 @@ shinyServer(function(input, output, session) {
           
           #fechas superior
           output$fechas.filtros <- renderText({
-               paste("Del ", ymd(fechas), "al", fecha.hoy)
+               HTML(paste0("<h5 style='padding-left: 10px'>Del ", ymd(fechas), " al ", fecha.hoy,"</h5>"))
           }) 
           
           kpi.tiempo <<- q.kpi.tiempo.proceso(id_usuario = id_user(), 
@@ -929,7 +941,7 @@ shinyServer(function(input, output, session) {
 
           #fechas superior
           output$fechas.filtros <- renderText({
-               paste("Del ", ymd(fechas), "al",fecha.hoy)
+               HTML(paste0("<h5 style='padding-left: 10px'>Del ", ymd(fechas), " al ", fecha.hoy,"</h5>"))
           }) 
           
           kpi.tiempo <<- q.kpi.tiempo.proceso(id_usuario = id_user(), 
@@ -941,8 +953,8 @@ shinyServer(function(input, output, session) {
           
           
           output$ui.tiempo.promedio <- renderValueBox({
-               valor <- tiempo[tiempo$id_proceso==4,]$dias
-               if(nrow(tiempo)==0) valor = 0
+               valor <- ifelse(nrow(tiempo)==0, 0,
+               tiempo[tiempo$id_proceso==4,]$dias)
                valueBox(valor ,"Dias proceso", 
                     icon = icon("clock-o"),
                     color = "light-blue"
@@ -3229,7 +3241,7 @@ shinyServer(function(input, output, session) {
           
           output$menu.login <- renderMenu({
                sidebarMenu(
-                    p(paste("Bienvenid@", nombre)),
+                    HTML(paste0("<h4 style='padding-left: 20px'>Bienvenid@ <br>", nombre,"</h4>")),
                     actionBttn(inputId = "b.salir", label = "Salir", 
                                style = "bordered", color = "danger",size = "xs", icon = icon("sign-out"))
                )
