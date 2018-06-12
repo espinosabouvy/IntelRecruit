@@ -3203,10 +3203,10 @@ shinyServer(function(input, output, session) {
           
           #cargar catalogos
           con <- conectar()
+          c_procesos <<- dbGetQuery(con, "SELECT * FROM vacantes_procesos WHERE baja = 0 ORDER BY orden")
           c_sexo <<- dbGetQuery(con, paste("SELECT * FROM c_sexo"))
           c_escolaridad <<- dbGetQuery(con, paste("SELECT * FROM c_escolaridad WHERE baja = 0"))
           c_medio <<- dbGetQuery(con, paste("SELECT * FROM medios WHERE baja = 0"))
-          c_procesos <<- dbGetQuery(con, "SELECT * FROM vacantes_procesos WHERE baja = 0 ORDER BY orden")
           c_concepto.gastos <<- dbGetQuery(con, "SELECT *  FROM gastos_conceptos WHERE baja = 0")
           c_catalogos <<- dbGetQuery(con, "SELECT * FROM catalogos")
           c_reclutadores <<- dbGetQuery(con, "SELECT * FROM users WHERE level = 'reclutador' AND baja = 0")
@@ -3222,6 +3222,15 @@ shinyServer(function(input, output, session) {
           updatePickerInput(session, "Vvacante", choices = c_vacantes$nombre)
           updatePickerInput(session, "Vreclut", choices = c_reclutadores$nombre)
           
+          #carga el proceso actual definido
+          nombres.procesos <- c_procesos%>%filter(as.integer(id) %!in% c(1,4,5))%>%arrange(orden)
+          i=2
+          for(p in nombres.procesos$nombre){
+               updateTextInput(session, paste0("txt.paso",i),value = p)
+               i=i+1
+          }
+          
+          
           observeEvent(new.users(), {
                a <- isolate(new.users())
                updatePickerInput(session, "Vreclut", choices = c_reclutadores$nombre)
@@ -3234,71 +3243,135 @@ shinyServer(function(input, output, session) {
                                style = "bordered", color = "danger",size = "xs", icon = icon("sign-out"))
                )
           })
-
+          
+          #revisar si ya tiene cargado un proceso
+          
           if(level == "supervisor"){
                
-               output$menu.reclut <- renderMenu({
-                    sidebarMenu(
-                         uiOutput("ui.reclut")
-               )
-               })
-
-               output$menu.logged <- renderMenu({
-                    sidebarMenu(
-                         uiOutput("ui.fechas"),
-                         uiOutput("ui.fechas.filtros.super"),
-                         menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer")),
-                         menuItem("KPIs", tabName = "kpis", icon = icon("line-chart")),
-                         #menuItem("SUPERVISION", tabName = "supervision", icon = icon("stethoscope"), selected = T),
-                         menuItem("CLIENTES", tabName = "abc-clientes", icon = icon("industry")),
-                         menuItem("VACANTES", tabName = "abc-vacantes", icon = icon("list")),
-                         menuItem("METAS", tabName = "abc-metas", icon = icon("trophy")),
-                         menuItem("USUARIOS", tabName = "abc-users", icon = icon("users")),
-                         menuItem("CATALOGOS", tabName = "catalogos", icon = icon("table")),
-                         id = "Menu.super"
-                    )
-               })
-               
-               #combos de elegir reclutadores
-               output$ui.reclut <- renderUI({
-                    new.users()
-                    pickerInput("reclut", label = "Datos de", 
-                                inline = F, multiple = F, choices = c_reclutadores$nombre, 
-                                options = list('dropupAuto' = T, 'mobile'=T,
-                                               container=  'body',
-                                               style = "btn-primary"))
-               })
-               
+               if (nrow(c_procesos)==0){
+                    msg = "Es necesario que un supervisor defina el proceso de reclutamiento.
+                    Por favor sigue las indicaciones para realizarlo, es una parte crítica de IntelRecruit"
+                    
+                    shinyalert(title = "Configuracion", 
+                               text =  msg,
+                               closeOnEsc = TRUE,
+                               closeOnClickOutside = FALSE,
+                               html = FALSE,
+                               type = "warning",
+                               timer = 0,
+                               animation = TRUE,
+                               showConfirmButton = TRUE,
+                               showCancelButton = TRUE,
+                               confirmButtonText = "Si, quiero definirlo",
+                               confirmButtonCol = "#AEDEF4",
+                               cancelButtonText = "No, salir",
+                               callbackR = function(x) if(x==T) definir.procedimiento())
+                    
+                    salir()
+               } else {
+                    
+                    output$menu.reclut <- renderMenu({
+                         sidebarMenu(
+                              uiOutput("ui.reclut")
+                         )
+                    })
+                    
+                    output$menu.logged <- renderMenu({
+                         sidebarMenu(
+                              uiOutput("ui.fechas"),
+                              uiOutput("ui.fechas.filtros.super"),
+                              menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer")),
+                              menuItem("KPIs", tabName = "kpis", icon = icon("line-chart")),
+                              #menuItem("SUPERVISION", tabName = "supervision", icon = icon("stethoscope"), selected = T),
+                              menuItem("CLIENTES", tabName = "abc-clientes", icon = icon("industry")),
+                              menuItem("VACANTES", tabName = "abc-vacantes", icon = icon("list")),
+                              menuItem("CANDIDATOS", tabName = "abc-candidatos", icon = icon("user-circle")),
+                              menuItem("METAS", tabName = "abc-metas", icon = icon("trophy")),
+                              menuItem("USUARIOS", tabName = "abc-users", icon = icon("users")),
+                              menuItem("CATALOGOS", tabName = "catalogos", icon = icon("table")),
+                              menuItem("DEFINIR PROCESO", tabName = "define-proceso", icon = icon("tasks")),
+                              id = "Menu.super"
+                         )
+                    })
+                    
+                    #combos de elegir reclutadores
+                    output$ui.reclut <- renderUI({
+                         new.users()
+                         pickerInput("reclut", label = "Datos de", 
+                                     inline = F, multiple = F, choices = c_reclutadores$nombre, 
+                                     options = list('dropupAuto' = T, 'mobile'=T,
+                                                    container=  'body',
+                                                    style = "btn-primary"))
+                    })
+               }
           }
           
           if(level == "reclutador"){
-               output$menu.reclut <- renderMenu({
-                    return(NULL)
-               })
-
-               output$menu.logged <- renderMenu({
-                    sidebarMenu(
-                         menuItem("SEGUIMIENTO VACANTES", tabName = "abc-registro", icon = icon("bullseye"), selected = T),
-                         menuSubItem("BOLSA DE CANDIDATOS", "abc-bolsa", icon = icon("archive")),
-                         menuItem("VACANTES", tabName = "solo-vacantes", icon = icon("list")),
-                         menuItem("GASTOS", tabName = "abc-gastos", icon = icon("usd")),
-                         menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer")),
-                         menuItem("KPIs", tabName = "kpis", icon = icon("line-chart")),
-                         uiOutput("ui.fechas"),
-                         # uiOutput("ui.rango"),  #por semana, mes
-                         uiOutput("ui.fechas.filtros"),
-                         id = "Menu.reclut"
-                    )
-               })
                
-               #combos de elegir reclutadores
-               output$ui.reclut <- renderUI({
-                    pickerInput("reclut", label = "", 
-                                inline = T, multiple = F, choices = nombre, 
-                                options = list('dropupAuto' = T, 'mobile'=T,
-                                               container=  'body'))
-               })
+               if (nrow(c_procesos)==0){
+                    msg = "Es necesario que un supervisor defina el proceso de reclutamiento.
+                    Registrate con un usuario de supervisor para continuar"
+                    shinyalert(title = "Configuracion", 
+                               text =  msg,
+                               closeOnEsc = TRUE,
+                               closeOnClickOutside = FALSE,
+                               html = FALSE,
+                               type = "warning",
+                               timer = 0,
+                               animation = TRUE,
+                               showConfirmButton = FALSE,
+                               showCancelButton = TRUE,
+                               cancelButtonText = "Salir")
+                    salir()
+                    
+               } else {
+                    
+                    output$menu.reclut <- renderMenu({
+                         return(NULL)
+                    })
+                    
+                    output$menu.logged <- renderMenu({
+                         sidebarMenu(
+                              menuItem("SEGUIMIENTO VACANTES", tabName = "abc-registro", icon = icon("bullseye"), selected = T),
+                              menuItem("CANDIDATOS", tabName = "abc-candidatos", icon = icon("user-circle")),
+                              menuSubItem("BOLSA DE CANDIDATOS", "abc-bolsa", icon = icon("archive")),
+                              menuItem("VACANTES", tabName = "solo-vacantes", icon = icon("list")),
+                              menuItem("GASTOS", tabName = "abc-gastos", icon = icon("usd")),
+                              menuItem("SCOREBOARD", tabName = "score", icon = icon("tachometer")),
+                              menuItem("KPIs", tabName = "kpis", icon = icon("line-chart")),
+                              uiOutput("ui.fechas"),
+                              # uiOutput("ui.rango"),  #por semana, mes
+                              uiOutput("ui.fechas.filtros"),
+                              id = "Menu.reclut"
+                         )
+                    })
+                    
+                    #combos de elegir reclutadores
+                    output$ui.reclut <- renderUI({
+                         pickerInput("reclut", label = "", 
+                                     inline = T, multiple = F, choices = nombre, 
+                                     options = list('dropupAuto' = T, 'mobile'=T,
+                                                    container=  'body'))
+                    })
+               }
           }
      }
-
+     
+     definir.procedimiento <- function(){
+          output$menu.login <- renderMenu({
+               sidebarMenu(
+                    p(paste("Bienvenid@", nombre)),
+                    actionBttn(inputId = "b.salir", label = "Salir", 
+                               style = "bordered", color = "danger",size = "xs", icon = icon("sign-out"))
+               )
+          })
+          
+          output$menu.logged <- renderMenu({
+               sidebarMenu(
+                    menuItem("DEFINIR PROCESO", tabName = "define-proceso", icon = icon("tasks"),selected = T),
+                    id = "Menu.proceso"
+               )
+          })
+          
+     }
 })

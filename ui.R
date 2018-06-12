@@ -211,6 +211,26 @@ dashboardPage(skin = "blue",
                                 dataTableOutput("tabla.metas"),
                                 busyIndicator("Cargando vacantes...", wait = 1)
                         ),
+                        tabItem("define-proceso",
+                                p("Define los pasos de tu proceso de reclutamiento."),
+                                column(6, 
+                                       prettyCheckbox(inputId = "txt.name.solicitud", 
+                                                      label = "Paso 1 - Solicitud", value = TRUE, 
+                                                      icon = icon("check"), status = "success", 
+                                                      animation = "rotate", bigger = T),
+                                       lapply(2:6, function(i){
+                                            textInput(paste0("txt.paso",i),paste("Paso",i),placeholder = "Dejar vacio si no se requiere")
+                                       }),
+                                       prettyCheckbox(inputId = "txt.name.contratar", 
+                                                      label = "Paso final - Contratar", value = TRUE, 
+                                                      icon = icon("check"), status = "success", 
+                                                      animation = "rotate" ,bigger = T),
+                                       actionBttn(inputId = "cmd.definir.proceso", "Guardar proceso",icon = icon("save"),color = "success")),
+                                column(12, p("PRECAUCIÓN: Si ya tienes registros de avance de proceso
+                                             registrados, solo se cambiarán los nombres (etiqueta) del proceso realizado, no los registros. 
+                                             Esto puede causar errores y conflictos, antes de realizar un cambio te sugerimos te pongas en contacto con nosotros
+                                             en contacto@magro.com.mx"))
+                                ),
                         tabItem("score",
                                 box(title = "Vacantes",width = 12, background = "black",
                                 valueBoxOutput("ui.vacantes.cumplidas",width = 2),
