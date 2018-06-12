@@ -1,0 +1,110 @@
+
+Listening on http://127.0.0.1:43443
+
+Attaching package: ‘shinydashboard’
+
+The following object is masked from ‘package:graphics’:
+
+    box
+
+Loading required package: RJSONIO
+Loading required package: plyr
+
+Attaching package: ‘shinysky’
+
+The following object is masked from ‘package:shiny’:
+
+    actionButton
+
+
+Attaching package: ‘dplyr’
+
+The following objects are masked from ‘package:plyr’:
+
+    arrange, count, desc, failwith, id, mutate, rename, summarise,
+    summarize
+
+The following objects are masked from ‘package:stats’:
+
+    filter, lag
+
+The following objects are masked from ‘package:base’:
+
+    intersect, setdiff, setequal, union
+
+
+Attaching package: ‘DT’
+
+The following objects are masked from ‘package:shiny’:
+
+    dataTableOutput, renderDataTable
+
+
+Attaching package: ‘lubridate’
+
+The following object is masked from ‘package:plyr’:
+
+    here
+
+The following object is masked from ‘package:base’:
+
+    date
+
+
+Attaching package: ‘plotly’
+
+The following object is masked from ‘package:ggplot2’:
+
+    last_plot
+
+The following objects are masked from ‘package:plyr’:
+
+    arrange, mutate, rename, summarise
+
+The following object is masked from ‘package:stats’:
+
+    filter
+
+The following object is masked from ‘package:graphics’:
+
+    layout
+
+
+Attaching package: ‘shinyalert’
+
+The following object is masked from ‘package:shinysky’:
+
+    shinyalert
+
+The following object is masked from ‘package:shiny’:
+
+    runExample
+
+Warning:  1 failed to parse.
+Warning: call dbDisconnect() when finished working with a connection
+Warning:  1 failed to parse.
+Warning: call dbDisconnect() when finished working with a connection
+Warning:  1 failed to parse.
+Warning: call dbDisconnect() when finished working with a connection
+Warning: Error in filter_impl: invalid subscript type 'integer'
+Stack trace (innermost first):
+    81: <Anonymous>
+    80: stop
+    79: filter_impl
+    78: filter_.tbl_df
+    77: filter_
+    76: as.data.frame
+    75: filter_.data.frame
+    74: filter_
+    73: filter
+    72: function_list[[i]]
+    71: freduce
+    70: _fseq
+    69: eval
+    68: eval
+    67: withVisible
+    66: %>%
+    65: observeEventHandler [/srv/shiny-server/demos/intelrecruit/server.R#1561]
+     1: runApp
+
+Execution halted

@@ -13,26 +13,27 @@ library(plotly)
 library(shinyalert) #install.packages('shinyalert')
 library(tibble)
 library(stringi)  #install.packager('stringi')
-library(rhandsontable) #install.packager('rhandsontable)
+# library(shinyjs)  #install.packages("shinyjs")
+# library(rhandsontable) #install.packager('rhandsontable)
 # library(ggmap) #distancia entre cps
-
-# #poner text input lado a lado
-# textInputRow<-function (inputId, label, value = "") 
-# {
-#      div(style="display:inline-block",
-#          tags$label(label, `for` = inputId), 
-#          tags$input(id = inputId, type = "text", value = value, class="input-small"))
-# }
 
 shinyUI(
 dashboardPage(skin = "blue",
-              dashboardHeader(title ="IntelRecruit v.2.0",titleWidth = 200),
+              dashboardHeader(title ="IntelRecruit v.4.0",titleWidth = 200),
               dashboardSidebar(width = 200,
                    sidebarMenuOutput("menu.login"),
                    sidebarMenuOutput("menu.reclut"),
                    sidebarMenuOutput("menu.logged")
                         ),
               dashboardBody(
+                    tags$header(HTML("<script async src='https://www.googletagmanager.com/gtag/js?id=UA-89791536-5'></script>
+                         <script>
+                         window.dataLayer = window.dataLayer || [];
+                         function gtag(){dataLayer.push(arguments);}
+                         gtag('js', new Date());
+                         
+                         gtag('config', 'UA-89791536-5');
+                         </script>")),     
                    fluidPage(
                              useShinyalert(),
                    tabItems(
@@ -45,17 +46,21 @@ dashboardPage(skin = "blue",
                                     splitLayout(cellWidths = c("50%","50%"),
                                                 pickerInput("Cproceso","Proceso","",
                                                             options = list('dropupAuto' = T, 'mobile'=T)),
-                                                dateInput("CFecha","Fecha",value = Sys.Date(),max = Sys.Date(),
-                                                          language = "es")),
+                                                uiOutput("ui.Cfecha")),
                                     uiOutput("razon.rechazo"),
                                     actionBttn("cmd.guardar.proceso",  NULL, 
                                                style = "simple", color = "success", icon = icon("floppy-o"))
                                 ),
-                                box(title = 'ABC CANDIDATOS', width = 8, collapsible = T,
+                                box(title = 'ABC CANDIDATOS', width = 8, collapsible = T, collapsed = T,
                                     splitLayout(cellWidths = c("0%","40%","60%"),
                                                 textInput("Tid", "ID"),
                                                 textInput("Tnombre", "Nombre"),
                                                 textInput("Tdireccion","Direccion")
+                                    ),
+                                    splitLayout(cellWidths = c("30%","30%","40%"),
+                                                textInput("Ttelefono", "Telefono"),
+                                                textInput("Tcelular", "Celular"),
+                                                textInput("Tcorreo","Correo")
                                     ),
                                     splitLayout(cellWidths = c("20%","20%","30%","30%"),
                                                 textInput("Tcp", "CP", placeholder = "CP de 5 digitos"),
@@ -122,10 +127,42 @@ dashboardPage(skin = "blue",
                                 DT::dataTableOutput("tabla.gastos"),
                                 busyIndicator("Cargando informacion...", wait = 2)),
                         tabItem("abc-users",
-                                DT::dataTableOutput("tabla.usuarios")),
+                                box(id = "users.box", title = "ABC usuarios", width = 12, collapsible = T,
+                                    splitLayout(cellWidths = c("0%","0%","30%","15%","20%","30%"),
+                                        textInput("Uid", "ID"),
+                                        textInput("Uvac", "Vacantes"),
+                                        textInput("Unombre","Nombre"),
+                                        textInput("Uuser","Usuario"),
+                                        pickerInput("Ulevel","Nivel de usuario",c("supervisor","reclutador"), 
+                                                    options = list('dropupAuto' = T, 'mobile'=T))
+                                    ),
+                                    actionBttn("cmd.nuevo.user", NULL, style = "simple",color = "primary", icon = icon("plus")),
+                                    actionBttn("cmd.guardar.user",  NULL, style = "simple", color = "success", icon = icon("floppy-o")),
+                                    actionBttn("cmd.borrar.user",  NULL, style = "simple", color = 'danger', icon = icon("minus")),
+                                    actionBttn("cmd.reset.user", "Reset contraseña", style = "bordered", color = 'success', icon = icon("unlock"))
+                                ),
+                                DT::dataTableOutput("tabla.usuarios"),
+                                busyIndicator("Cargando usuarios...", wait = 1)
+                         ),
                         tabItem("abc-clientes",
-                                checkboxInput("clientes.activos","Solo clientes con
-                                              vacantes activas", value = T),
+                                box(
+                                   id = "clientes.box", title = "ABC clientes", width = 12, collapsible = T,
+                                    splitLayout(cellWidths = c("0%","40%","55%"),
+                                                textInput("Ctid", "ID"),
+                                                textInput("Ctcliente","Cliente"),
+                                                textInput("Ctdireccion","Direccion")
+                                    ),
+                                    splitLayout(cellWidths = c("30%","30%"),
+                                                textInput("Cttelefono","Telefono"),
+                                                textInput("Ctcp","Codigo Postal")
+                                    ),
+                                    actionBttn("cmd.nuevo.cliente", NULL, style = "simple",color = "primary", icon = icon("plus")),
+                                    actionBttn("cmd.guardar.cliente",  NULL, style = "simple", color = "success", icon = icon("floppy-o")),
+                                    actionBttn("cmd.borrar.cliente",  NULL, style = "simple", color = 'danger', icon = icon("minus"))
+                                ),
+                                radioGroupButtons(inputId = "clientes.activos", label = "Filtrar", choices = c("Todos", "Con vacantes activas"), 
+                                                  status = "primary", selected = "Con vacantes activas",
+                                                  checkIcon = list(yes = icon("ok", lib = "glyphicon"), no = icon("remove",lib = "glyphicon"))),
                                 DT::dataTableOutput("tabla.clientes"),
                                 busyIndicator("Cargando clientes...", wait = 1)
                                 ),
@@ -184,33 +221,50 @@ dashboardPage(skin = "blue",
                                 valueBoxOutput("ui.vacantes.abiertas",width = 2),
                                 valueBoxOutput("ui.dias.vacantes",width = 2)),
                                 box(title = "Dias de proceso",width = 4,
-                                    plotOutput("p.tiempos.proceso", height = 200)),
+                                    plotOutput("p.tiempos.proceso", height = 200)), #ok
                                 box(title = "Embudo",width = 4,
-                                    plotOutput("p.embudo", height = 200)),
+                                    plotOutput("p.embudo", height = 200)), #ok
                                 box(title = "Medios" ,width = 4,
-                                    plotOutput("p.medios", height = 200)),
+                                    plotOutput("p.medios", height = 200)), #ok
                                 box(title = "Razones de rechazo",width = 4,
-                                    plotOutput("p.razones.rechazo", height = 200)),
+                                    plotOutput("p.razones.rechazo", height = 200)),  #ok
                                 box(title = "Costo por medio",width = 4,
-                                    plotOutput("p.costo.por.medio", height = 200)),
+                                    plotOutput("p.costo.por.medio", height = 200)), #ok
                                     # h5("Total gastado", height=40)),
                                 box(title = "En proceso",width = 4,
                                     plotOutput("p.en.proceso", height = 100)),
                                 busyIndicator("Calculando scoreboard...", wait = 1)
                         ),
+                        tabItem("supervision",
+                                box(title = "Generales", width = 12, background = "black",
+                                   valueBoxOutput("uis.total.vacantes",width = 3), #ok
+                                   valueBoxOutput("uis.total.solicitudes",width = 3),
+                                   valueBoxOutput("uis.gastado",width = 3),
+                                   valueBoxOutput("uis.vacantes.abiertas",width = 3) #ok
+                                ),
+                                box(title = "Vacantes", width = 12, background = "black",
+                                    valueBoxOutput("uis.vacantes.cerradas",width = 2), #ok
+                                    valueBoxOutput("uis.solicitudes.vacante",width = 2),
+                                    valueBoxOutput("uis.tiempo.promedio",width = 2),
+                                    valueBoxOutput("uis.costo.vacante",width = 2),
+                                    valueBoxOutput("uis.abiertas.promedio",width = 3), #ok
+                                    valueBoxOutput("uis.dias.vacantes",width = 2)
+                                ),
+                                box("Vacantes por cliente", width = 6,
+                                    plotOutput("ss.vacantes.cliente", height = "400px")),
+                                box("Vacantes por reclutador", width = 6,
+                                    plotOutput("ss.vacantes.reclut", height = "400px")),
+                                busyIndicator("Calculando indicadores...", wait = 1)
+                        ),
                         tabItem("kpis",
-                                box(title = "Solicitudes por vacante",width = 12, background = 'yellow',
-                                    # dropdownButton(
-                                    #      uiOutput("ui.filtro.procesos"),
-                                    #      circle = T, status = 'danger',icon = icon("gear"),
-                                    #      width = "300px"),
+                                box("SOLICITUDES POR VACANTE",width = 12, background = 'yellow',
                                    plotOutput("p.solicitudes.promedio",height = "200px")),
-                                box(title = "Tiempo utilizado para cerrar vacantes",width = 12, background = 'orange',
+                                box("TIEMPO UTILIZADO PARA CERRAR VACANTES",width = 12, background = 'orange',
                                    plotOutput("p.tiempos.proceso.score",height = "200px")),
-                                box(title = "Porcentaje de vacantes cerradas",width = 12, background = 'green',
+                                box("PORCENTAJE DE VACANTES CERRADAS",width = 12, background = 'green',
                                     plotOutput("p.porcentaje.cerradas",height = "200px")),
                                 busyIndicator("Calculando indicadores...", wait = 1)
-                      ),
+                         ),
                       tabItem("catalogos",
                               box("",
                                    pickerInput("cb.catalogo", label = "Catalogo a modificar",

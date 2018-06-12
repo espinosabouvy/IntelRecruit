@@ -1,4 +1,4 @@
-/*candidatos 				q.candidatos() */
+﻿/*candidatos 				q.candidatos() */
 SELECT candidatos.id, candidatos.nombre, cp, c_sexo.`nombre` AS 'sexo', c_escolaridad.`nombre`AS 'escolaridad', fecha_nacimiento, medios.`nombre` AS 'medio', direccion 
 FROM candidatos
 LEFT JOIN c_sexo ON candidatos.`id_sexo` = c_sexo.`id`
@@ -11,54 +11,114 @@ AND candidatos.`id` IN (  /*condicional a mis candidatos*/
 	WHERE id_vacante IN (
 		SELECT id id_vacante FROM vacantes WHERE id_usuario = 5 AND id_status=1)
 		)
-/*AND candidatos.`id`=517  /*condicional en R a un solo candidato*/
+AND candidatos.`id`=517
 ORDER BY candidatos.id
 
+/*usuarios con las vacantes abiertas			q.usuarios*/
+SELECT users.*, IFNULL(abiertas,0) 'vacantes_abiertas'
+FROM users
+LEFT JOIN (
+	SELECT id_usuario, COUNT(id) 'abiertas'
+	FROM vacantes 
+	WHERE baja = 0 
+	AND id_status IN (1)
+	GROUP BY id_usuario) va
+ON va.id_usuario = users.id
+WHERE users.a = 0
+
+
 /*vacantes 						q.vacantes()*/
-SELECT vacantes.id, clientes.`nombre` AS 'cliente', vacantes_nombre.`nombre` AS 'vacante', COUNT(DISTINCT(vf.id_candidato)) AS 'candidatos',
-vacantes.fecha, vacantes_status.`nombre` AS 'status', users.`user` AS 'asesor', clientes.`codigo_postal`
+SELECT vacantes.id, clientes.`nombre` AS 'cliente', vacantes_nombre.`nombre` AS 'vacante',
+	COUNT(DISTINCT(vf.id_candidato)) AS 'candidatos',
+	vacantes.fecha, vacantes_status.`nombre` AS 'status', users.`nombre` AS 'asesor',
+	clientes.`codigo_postal`
 FROM vacantes
 LEFT JOIN clientes ON clientes.id = vacantes.`id_cliente`
 LEFT JOIN vacantes_nombre ON vacantes_nombre.id = vacantes.`id_nombre_vacante`
 LEFT JOIN vacantes_status ON vacantes_status.id = vacantes.`id_status`
-LEFT JOIN (SELECT vacantes_following.* 
-	FROM vacantes_following
-	LEFT JOIN candidatos can ON can.id = vacantes_following.`id_candidato`
-	WHERE vacantes_following.`id_candidato` NOT IN (SELECT id_candidato 
-		FROM vacantes_following 
-		WHERE id_proceso=5)
-		AND can.`baja`=0) 
+RIGHT JOIN (SELECT * 
+        FROM vacantes_following
+	WHERE vacantes_following.`id_candidato` NOT IN (  /*quitar estos candidatos*/
+		SELECT DISTINCT(vf.id_candidato)
+		FROM vacantes_following vf
+		LEFT JOIN candidatos cand ON cand.id = vf.id_candidato
+		WHERE ((vf.id_proceso = 5 /*AND vf.cambio_vacante=0*/)
+		OR cand.baja = 1))) 
 AS vf ON vf.id_vacante = vacantes.`id`
-LEFT JOIN users ON users.id = vacantes.`id_usuario`
-WHERE vacantes.`baja`= 0
-AND vacantes.`id_status` IN (1) 
-AND vacantes.id_usuario = 5
+LEFT JOIN users ON users.id = vacantes.`id_usuario` 
+WHERE vacantes.`baja`= 0 
+AND vacantes.`id_status` IN (1)
+GROUP BY id
+ORDER BY cliente
+
+
+/*vacantes MODIFICADO				q.vacantes()*/
+SELECT vacantes.id, clientes.`nombre` AS 'cliente', vacantes_nombre.`nombre` AS 'vacante',
+	IFNULL(vf.candidatos,0) candidatos, vacantes.fecha, vacantes_status.`nombre` AS 'status', 
+	users.`nombre` AS 'asesor', clientes.`codigo_postal`
+FROM vacantes
+LEFT JOIN clientes ON clientes.id = vacantes.`id_cliente`
+LEFT JOIN vacantes_nombre ON vacantes_nombre.id = vacantes.`id_nombre_vacante`
+LEFT JOIN vacantes_status ON vacantes_status.id = vacantes.`id_status`
+LEFT JOIN users ON users.id = vacantes.`id_usuario` 
+LEFT JOIN (SELECT vf.id_vacante, COUNT(DISTINCT(vf.id_candidato)) 'candidatos'
+	FROM vacantes_following vf
+	LEFT JOIN vacantes_procesos vp ON vp.id = vf.id_proceso
+	LEFT JOIN candidatos can ON can.id = vf.id_candidato
+	WHERE vf.cambio_vacante = 0  /*solo registros de vacantes actuales*/
+	AND vp.baja = 0  /*procesos no borrados*/
+	AND can.baja = 0  /*candidatos no borrados*/
+	AND vf.id_candidato NOT IN ( /*quita procesos cerrados de vacante actual*/
+		SELECT DISTINCT(id_candidato) id_candidato
+		FROM vacantes_following vf
+		WHERE id_proceso IN (SELECT id 
+			FROM vacantes_procesos 
+			WHERE cierra_proceso=1)
+		AND cambio_vacante = 0)
+	GROUP BY vf.id_vacante) 
+AS vf ON vf.id_vacante = vacantes.`id`
+WHERE vacantes.`baja`= 0 
+AND vacantes.`id_status` IN (1)
 AND vacantes.`fecha` >= 20000101
-GROUP BY vacantes.`id`
+AND vacantes.`id_usuario` IN (5)
+GROUP BY id
+ORDER BY cliente
 
-SELECT vf.*
+/*candidatos en proceso*/
+SELECT vf.id_vacante, COUNT(DISTINCT(vf.id_candidato)) 'candidatos'
 FROM vacantes_following vf
+LEFT JOIN vacantes_procesos vp ON vp.id = vf.id_proceso
 LEFT JOIN candidatos can ON can.id = vf.id_candidato
-WHERE vf.id_vacante = 342 
-AND vf.id_candidato NOT IN (SELECT id_candidato FROM vacantes_following WHERE id_proceso=5)
-AND can.baja= 0
-
-
+WHERE vf.cambio_vacante = 0  /*solo registros de vacantes actuales*/
+AND vp.baja = 0  /*procesos no borrados*/
+AND can.baja = 0  /*candidatos no borrados*/
+AND vf.id_candidato NOT IN ( /*quita procesos cerrados de vacante actual*/
+	SELECT DISTINCT(id_candidato) id_candidato
+	FROM vacantes_following vf
+	WHERE id_proceso IN (SELECT id 
+		FROM vacantes_procesos 
+		WHERE cierra_proceso=1)
+	AND cambio_vacante = 0)
+GROUP BY vf.id_vacante
 
 /*clientes + con vacantes   						q.clientes()*/
-SELECT clientes.*, IF(COUNT(vacantes_abiertas.id_cliente)>0,1,0) AS 'con_vacantes' 
-FROM clientes
-LEFT JOIN (
-	SELECT id_cliente FROM vacantes WHERE id_status = 1) 
-AS vacantes_abiertas ON vacantes_abiertas.id_cliente = clientes.`id`
-WHERE clientes.`baja`=0
-GROUP BY clientes.`id`
+SELECT nombre, codigo_postal, telefono, direccion, vacantes_abiertas 
+FROM (
+	SELECT clientes.*, COUNT(vacantes_abiertas.id_cliente) AS 'vacantes_abiertas' 
+	FROM clientes
+	LEFT JOIN (
+		SELECT id_cliente FROM vacantes WHERE id_status = 1) 
+	AS vacantes_abiertas ON vacantes_abiertas.id_cliente = clientes.`id`
+	WHERE clientes.`baja`= 0
+	GROUP BY clientes.`id`) AS vacantes_activos
+WHERE vacantes_abiertas > 0
+
 
 
 /*seguimiento de candidatos - 							q.seguimiento*/
 SELECT cand.id AS 'id_candidato', cand.nombre  AS 'candidato', cand.escolaridad, cand.sexo, cand.medio, vacantes_detalle.*, vp.orden AS 'orden_proceso',
  vp.id AS 'id_proceso', vp.nombre AS 'proceso', 
-vf.fecha, vf.comentarios 
+vf.fecha, vf.comentarios
 FROM vacantes_following AS vf
 LEFT JOIN 
 	(SELECT candidatos.id, candidatos.nombre, candidatos.baja, c_sexo.`nombre` AS 'sexo', esc.`nombre` AS 'escolaridad', medios.`nombre` AS 'medio' 
@@ -76,31 +136,16 @@ RIGHT JOIN(
 	LEFT JOIN vacantes_nombre ON vacantes_nombre.id = vacantes.`id_nombre_vacante`
 	LEFT JOIN vacantes_status ON vacantes_status.id = vacantes.`id_status`
 	LEFT JOIN users ON users.id = vacantes.`id_usuario`
-	WHERE vacantes.id_status= 1 AND vacantes.id_usuario= 5)
-	AS vacantes_detalle ON vacantes_detalle.id_vacante = vf.`id_vacante`
+	WHERE vacantes.baja = 0 AND vacantes.id_status= 1 
+	AND vacantes.id_usuario= 5)
+AS vacantes_detalle ON vacantes_detalle.id_vacante = vf.`id_vacante`
 WHERE vf.id_candidato NOT IN 
 	(SELECT DISTINCT(vacantes_following.id_candidato) FROM vacantes_following
 	LEFT JOIN vacantes_procesos ON vacantes_procesos.id = vacantes_following.id_proceso
-	WHERE vacantes_procesos.cierra_vacante = 1) 
-	AND cand.baja=0
-	
-/*buscar vacantes iguales de una vacante                                           q.vac.iguales*/
-SELECT vac.id id_vacante
-FROM vacantes vac
-RIGHT JOIN(SELECT id_cliente, id_nombre_vacante
-		FROM vacantes vac
-		WHERE vac.id = 287) 
-AS dvac ON dvac.id_cliente = vac.id_cliente AND dvac.id_nombre_vacante = vac.id_nombre_vacante
-WHERE vac.id_status = 1 AND vac.id <> 287
-ORDER BY fecha
-LIMIT 1
-
-/*candidatos que se asignan a nueva vacante igual, cuando se cierra una vacante      			 q.following */
-SELECT *
-FROM vacantes_following vf
-WHERE vf.id_vacante =  259 
-AND id_proceso <> 5
-AND id_candidato <> 0
+	WHERE vacantes_procesos.cierra_vacante = 1)
+AND cand.baja=0
+AND vf.cambio_vacante=0
+ORDER BY cliente, candidato
 
 
 /*kpi vacantes 				q.kpi.tiempo.proceso()*/
@@ -111,7 +156,7 @@ LEFT JOIN razones_rechazo rc ON rc.`id` = vf.id_razon_rechazo
 RIGHT JOIN 
 	(SELECT vacantes.id, vacantes.`baja`, clientes.`nombre`, vacantes_nombre.`nombre` AS 'vacante', fecha AS 'fecha_vacante', vacantes.`id_status` AS 'id_status', users.id AS 'id_usuario' ,
 	users.`user` AS 'asesor' 
-	FROM vacantes
+FROM vacantes
 	LEFT JOIN clientes ON clientes.id = vacantes.`id_cliente`
 	LEFT JOIN vacantes_nombre ON vacantes_nombre.id = vacantes.`id_nombre_vacante`
 	LEFT JOIN users ON users.id = vacantes.`id_usuario`
@@ -130,7 +175,7 @@ LEFT JOIN vacantes_nombre ON vacantes_nombre.id = vacantes.`id_nombre_vacante`
 LEFT JOIN vacantes_status ON vacantes_status.id = vacantes.`id_status`
 LEFT JOIN users ON users.id = vacantes.`id_usuario`
 RIGHT JOIN (
-	SELECT  vacantes_following.id_vacante, cand.candidato, cand.sexo, cand.escolaridad, cand.id_medio, cand.medio, proc.nombre AS 'proceso', vacantes_following.`fecha`
+	SELECT  vacantes_following.id_vacante, cand.candidato, cand.o, cand.escolaridad, cand.id_medio, cand.medio, proc.nombre AS 'proceso', vacantes_following.`fecha`
 	FROM vacantes_following 
 	LEFT JOIN (SELECT cand.id, cand.nombre AS 'candidato', c_sexo.`nombre` AS 'sexo', c_escolaridad.`nombre` AS 'escolaridad', cand.`id_medio`, medios.`nombre` AS 'medio'
 			FROM candidatos AS cand
@@ -138,13 +183,13 @@ RIGHT JOIN (
 			LEFT JOIN c_escolaridad ON c_escolaridad.id = cand.id_escolaridad
 			LEFT JOIN medios ON medios.`id` = cand.id_medio	 
 			) AS cand ON cand.id= vacantes_following.`id_candidato`
-	LEFT JOIN vacantes_procesos AS proc ON proc.id = vacantes_following.`id_proceso`
- )AS vf ON vf.id_vacante = vacantes.`id`
+	LEFT JOIN vacantes_procesos AS proc ON proc.id = vacantes_following.`id_proceso`)
+AS vf ON vf.id_vacante = vacantes.`id`
 WHERE vacantes.`baja`=0 
 AND vacantes.`id_status` IN (1,2) AND vacantes.`id_usuario`=4 AND vacantes.fecha BETWEEN 20171221 AND 20180321 AND vacantes_status.`nombre` ="Cerrada"
 
 
-/*candidatos disponibles - aparece multiples veces, si fue asignado más de una vez a una vacante y que no tengan proceso cerrado                      q.bolsa.vacantes()*/
+/*candidatos disponibles - aparece multiples veces, si fue asignado más de una vez a una vacante y que no tengan proceso cerrado                      q.ba.vacantes()*/
 SELECT candidatos.id, candidatos.nombre, vacantes.vacante_original, vacantes.cliente_original, va.id_proceso, va.ultimo_proceso, va.razon_rechazo, cp, c_sexo.`nombre` AS 'sexo', 
 c_escolaridad.`nombre`AS 'escolaridad', fecha_nacimiento, medios.`nombre` AS 'medio', direccion 
 FROM candidatos
@@ -161,8 +206,9 @@ RIGHT JOIN (
 	) ultimo ON ultimo.id_candidato = vf.id_candidato AND 
 		ultimo.orden = vp.orden
 	LEFT JOIN vacantes vac ON vac.id = vf.id_vacante
-	WHERE vf.id_proceso = 5 OR (vac.id_status = 2 AND vf.id_proceso <> 4) /*rechazado o (vacante cerrada y el no fue ingresado)*/
-	AND vf.`cambio_vacante` = 0
+	WHERE (vf.id_proceso = 5 AND vf.cambio_vacante =0) /*rechazado en su nva vacante o (vacante cerrad el no fue ingresado)*/
+		OR (vac.id_status = 2 AND vf.id_proceso <> 4) 
+		AND vf.`cambio_vacante` = 0
 	)  
 AS va ON va.id_candidato = candidatos.`id`
 LEFT JOIN c_sexo ON candidatos.`id_sexo` = c_sexo.`id`
@@ -186,7 +232,7 @@ AND fecha >= 20180116
 /*gastos por medio y asesor              q.gastos*/
 SELECT id_asesor, gc.nombre, medios.id id_medio, medios.`nombre`, monto 
 FROM gastos
-LEFT JOIN gastos_conceptos gc ON gc.id = gastos.`id_concepto`
+LEFT JOIN gastos_conceptgc ON gc.id = gastos.`id_concepto`
 LEFT JOIN medios ON medios.id = gastos.`id_medio`
 WHERE gastos.`baja` = 0
 AND gastos.fecha >= 20180116
@@ -220,7 +266,7 @@ RIGHT JOIN (
 	GROUP BY id_candidato
 	) ultimo ON ultimo.id_candidato = vf.id_candidato AND 
 			 ultimo.orden = vp.orden
- LEFT JOIN vacantes vac ON vac.id = vf.id_vacante
+ LEFTIN vacantes vac ON vac.id = vf.id_vacante
  WHERE vf.id_proceso = 5 OR (vac.id_status = 2 AND vf.id_proceso <> 4)
 
 /*seguimiento de vacantes*/
@@ -236,7 +282,7 @@ LEFT JOIN (
 LEFT JOIN vacantes_procesos ON vacantes_procesos.`id` = vacantes_following.`id_proceso`
 
 /*gastado*/
-SELECT SUM(monto) gastado 
+SELECT (monto) gastado 
 FROM gastos
 WHERE baja = 0 
 AND fecha >=  20180101
@@ -266,7 +312,7 @@ FROM(
 	FROM candidatos ca
 	LEFT JOIN vacantes_following vf ON vf.`id_candidato` = ca.id
 	LEFT JOIN vacantes va ON va.id = vf.`id_vacante`
-	WHERE vf.`id_proceso` = 4 AND va.fecha >= 20180101 AND va.id_usuario = 5
+	WHERE vid_proceso` = 4 AND va.fecha >= 20180101 AND va.id_usuario = 5
 	GROUP BY (ca.id_medio)) AS cerradas
 RIGHT JOIN (
 	SELECT id_medio, SUM(monto) gastado
@@ -286,9 +332,25 @@ AND fecha >= 20180116
 AND ga.id_asesor = 5
 
 
-/*procesos realizados por candidato*/
+/*procesos realizados por candidato -  se usa en el cambio de vacantes*/
 SELECT cand.nombre, vf.*, vp.orden, vp.nombre proceso
 FROM vacantes_following vf
-LEFT JOIN vacantes_procesos vp ON vp.id = vf.`id_proceso`
+RIGHT JOIN (
+	SELECT *
+	FROM vacantes_procesos vap
+	WHERE vap.cierra_proceso = 0)
+AS vp ON vp.id = vf.`id_proceso`
 LEFT JOIN candidatos cand ON cand.id = vf.`id_candidato`
-WHERE vf.`id_candidato` IN (530)
+WHERE vf.cambio_vacante = 0ND vf.`id_candidato` IN (563)
+
+/*vacantes abiertas y cerradas por cliente         q.score.vacantes*/
+SELECT vacantes.id_cliente, clientes.nombre, users.nombre 'reclutador',
+	COUNT(vacantes.fecha) 'vacantes',
+	IF(vacantes.id_status = 1, 'A','C') 'status', vacantes.id_status
+FROM vacantes
+LEFT JOIN clientes on clientes.id = vacantes.id_cliente
+LEFT JOIN users on users.id = vacantes.id_usuario
+WHERE vacantes.baja = 0
+AND vacantes.fecha >= 20180101
+GROUP BY vacantes.id_cliente, vacantes.id_status, vacantes.id_usuario
+
