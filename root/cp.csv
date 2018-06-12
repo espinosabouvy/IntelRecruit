@@ -1,0 +1,2 @@
+Nombre,BD,port,host,allow_rechazados,allow_bajavacante,contrasena,usuario
+ROOT - DEMO,MiSuperBara,3306,magroapp.com,1,1,,root
